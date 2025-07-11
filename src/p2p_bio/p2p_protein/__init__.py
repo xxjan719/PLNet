@@ -1,0 +1,1 @@
+from .prot import PyProtein
