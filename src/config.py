@@ -1,7 +1,53 @@
 import os,sys,warnings
 import argparse
 import subprocess
-import pkg_resources
+
+# Try to import pkg_resources, install setuptools if missing
+try:
+    import pkg_resources
+except ImportError:
+    print("[INFO] pkg_resources not found. Installing setuptools...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "setuptools"], 
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        import pkg_resources
+        print("[SUCCESS] setuptools installed successfully")
+    except Exception as e:
+        print(f"[WARNING] Could not install setuptools: {e}")
+        print("[WARNING] Package checking functionality may be limited")
+        # Create a dummy pkg_resources-like object to prevent errors
+        class DummyDistribution:
+            def __init__(self, version="unknown"):
+                self.version = version
+        
+        class DummyWorkingSet:
+            def __iter__(self):
+                return iter([])
+            
+            def __getitem__(self, key):
+                return DummyDistribution()
+        
+        class DummyVersion:
+            def __init__(self, version_str):
+                self.version_str = version_str
+            def __lt__(self, other):
+                return False
+            def __eq__(self, other):
+                return True
+        
+        class DummyPkgResources:
+            working_set = DummyWorkingSet()
+            
+            @staticmethod
+            def get_distribution(pkg):
+                return DummyDistribution()
+            
+            @staticmethod
+            def parse_version(version):
+                return DummyVersion(str(version))
+        
+        pkg_resources = DummyPkgResources()
+
 from pathlib import Path
 import pandas as pd
 
@@ -39,21 +85,21 @@ class Config:
         self.FILE_P2P_CSV = os.path.join(self.DIR_DATA, "P2P.csv")
 
         # Dataset directories for downloaded data
-        self.DIR_PDBBIND_V2020_PP = os.path.join(self.DIR_DATA, "PDBbind_v2020")
-        self.DIR_SKEMPI_V2_WT = os.path.join(self.DIR_DATA, "SKEMPI_v2_WT")
-        self.DIR_SKEMPI_V2_MT = os.path.join(self.DIR_DATA, "SKEMPI_v2_MT")
+        self.DIR_V2020 = os.path.join(self.DIR_DATA, "V2020")
+        self.DIR_WT = os.path.join(self.DIR_DATA, "WT")
+        self.DIR_MT = os.path.join(self.DIR_DATA, "MT")
 
         # Dataset configurations
         self.DATASET_CONFIG = {
-            'PDBBIND_V2020_PP':{
+            'V2020':{
                 'name': 'PDBbind_v2020_PP',
                 'suffix': 'PDBbind_v2020_PP',
             },
-            'SKEMPI_V2_WT':{
+            'WT':{
                 'name': 'SKEMPI_v2_WT',
                 'suffix': 'SKEMPI_v2_WT',
             },
-            'SKEMPI_V2_MT':{
+            'MT':{
                 'name': 'SKEMPI_v2_MT',
                 'suffix': 'SKEMPI_v2_MT',
             },
@@ -165,30 +211,37 @@ class Config:
             DATASET_P2P = pd.read_csv(self.FILE_P2P_CSV)
 
             # Generate dataset-sepcific tables
-            DATASET_PDBBIND_V2020_PP = DATASET_P2P[DATASET_P2P['source'] == 'PDBbind_V2020_PP']
-            DATASET_SKEMPI_V2_WT = DATASET_P2P[DATASET_P2P['source'] == 'SKEMPI_v2_WT']
-            DATASET_SKEMPI_V2_MT = DATASET_P2P[DATASET_P2P['source'] == 'SKEMPI_v2_MT']
+            # Note: suffix values in CSV are 'V2020', 'wt', 'mt' (lowercase for wt/mt)
+            DATASET_PDBBIND_V2020_PP = DATASET_P2P[DATASET_P2P['suffix'] == 'V2020']
+            DATASET_SKEMPI_V2_WT = DATASET_P2P[DATASET_P2P['suffix'] == 'wt']
+            DATASET_SKEMPI_V2_MT = DATASET_P2P[DATASET_P2P['suffix'] == 'mt']
+            
+            # Debug: Print number of rows found for each dataset
+            print(f"\n[INFO] Dataset filtering results:")
+            print(f"  V2020: {len(DATASET_PDBBIND_V2020_PP)} rows")
+            print(f"  WT: {len(DATASET_SKEMPI_V2_WT)} rows")
+            print(f"  MT: {len(DATASET_SKEMPI_V2_MT)} rows")
 
             # Store partner1 and partner2 columns as lists for each dataset
-            self.PDBBIND_V2020_PP_partner1 = DATASET_PDBBIND_V2020_PP['partner1'].tolist()
-            self.PDBBIND_V2020_PP_partner2 = DATASET_PDBBIND_V2020_PP['partner2'].tolist()
-            self.SKEMPI_V2_WT_partner1 = DATASET_SKEMPI_V2_WT['partner1'].tolist()
-            self.SKEMPI_V2_WT_partner2 = DATASET_SKEMPI_V2_WT['partner2'].tolist()
-            self.SKEMPI_V2_MT_partner1 = DATASET_SKEMPI_V2_MT['partner1'].tolist()
-            self.SKEMPI_V2_MT_partner2 = DATASET_SKEMPI_V2_MT['partner2'].tolist()
+            self.PDBBIND_V2020_PP_partner1 = DATASET_PDBBIND_V2020_PP['partnerA'].tolist()
+            self.PDBBIND_V2020_PP_partner2 = DATASET_PDBBIND_V2020_PP['partnerB'].tolist()
+            self.SKEMPI_V2_WT_partner1 = DATASET_SKEMPI_V2_WT['partnerA'].tolist()
+            self.SKEMPI_V2_WT_partner2 = DATASET_SKEMPI_V2_WT['partnerB'].tolist()
+            self.SKEMPI_V2_MT_partner1 = DATASET_SKEMPI_V2_MT['partnerA'].tolist()
+            self.SKEMPI_V2_MT_partner2 = DATASET_SKEMPI_V2_MT['partnerB'].tolist()
 
             # Update dataset configuration with tables and directories
-            self.DATASET_CONFIG['PDBBIND_V2020_PP'].update({
+            self.DATASET_CONFIG['V2020'].update({
                 'table': DATASET_PDBBIND_V2020_PP,
-                'dir': self.DIR_PDBBIND_V2020_PP
+                'dir': self.DIR_V2020
             })
-            self.DATASET_CONFIG['SKEMPI_V2_WT'].update({
+            self.DATASET_CONFIG['WT'].update({
                 'table': DATASET_SKEMPI_V2_WT,
-                'dir': self.DIR_SKEMPI_V2_WT
+                'dir': self.DIR_WT
             })
-            self.DATASET_CONFIG['SKEMPI_V2_MT'].update({
+            self.DATASET_CONFIG['MT'].update({
                 'table': DATASET_SKEMPI_V2_MT,
-                'dir': self.DIR_SKEMPI_V2_MT
+                'dir': self.DIR_MT
             })
 
             # Store the main table as well
@@ -210,13 +263,34 @@ class Config:
         print(f"DIR_DATA: {self.DIR_DATA}")
         print(f"DIR_RESULTS: {self.DIR_RESULTS}")
         print(f"FILE_P2P_CSV: {self.FILE_P2P_CSV}")
-        print(f"DIR_PDBBIND_V2020_PP: {self.DIR_PDBBIND_V2020_PP}")
-        print(f"DIR_SKEMPI_V2_WT: {self.DIR_SKEMPI_V2_WT}")
-        print(f"DIR_SKEMPI_V2_MT: {self.DIR_SKEMPI_V2_MT}")
+        print(f"DIR_V2020: {self.DIR_V2020}")
+        print(f"DIR_WT: {self.DIR_WT}")
+        print(f"DIR_MT: {self.DIR_MT}")
 
-    def check_and_install_packages(self):
-        """Check if required packages are installed, install if missing"""
-        print("Checking required packages...")
+    def check_and_install_packages(self, auto_create_env=False):
+        """Check if required packages are installed, install if missing
+        
+        Args:
+            auto_create_env: If True, automatically create environment without prompting
+        
+        Returns:
+            bool: True if packages are installed/ready, False if user needs to activate environment
+        """
+        print("\n" + "="*60)
+        print("CHECKING PYTHON PACKAGES...")
+        print("="*60)
+        
+        # Check for virtual environment first (always check, not just when packages are missing)
+        if not self._is_in_virtual_environment():
+            env_active = self._check_or_create_environment(auto_create=auto_create_env)
+            if not env_active:
+                # User needs to activate environment first
+                print("\n" + "="*60)
+                print("[ACTION REQUIRED] Please activate the virtual environment and re-run this script.")
+                print("="*60)
+                return False
+        
+        print("\nChecking required packages...")
         installed_packages = {pkg.key: pkg.version for pkg in pkg_resources.working_set}
         
         missing_packages = []
@@ -230,11 +304,6 @@ class Config:
                 installed_version = pkg_resources.get_distribution(package).version
                 if pkg_resources.parse_version(installed_version) < pkg_resources.parse_version(version):
                     outdated_packages.append((package, version, installed_version))
-        
-        # If packages are missing, check virtual envitroment first
-        if missing_packages or outdated_packages:
-            if not self._is_in_virtual_environment():
-                self._prompt_create_environment()
         
         # Now install/upgrade packages
         for package, version in self.REQUIRED_PACKAGES.items():
@@ -258,66 +327,122 @@ class Config:
                 raise
 
         print("\nAll required packages are installed and up to date!")
+        return True
+    
+    def check_or_create_environment(self, auto_create=False):
+        """Public method to check or create virtual environment in project root
+        
+        Args:
+            auto_create: If True, automatically create environment without prompting
+        
+        Returns:
+            bool: True if running in venv or venv is active, False if user needs to activate
+        """
+        return self._check_or_create_environment(auto_create=auto_create)
     
     def _is_in_virtual_environment(self):
         """Check if the script is running in a virtual environment"""
         return hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
     
-    def _prompt_create_environment(self):
-        """Prompt user to create a virtual environment"""
+    def _check_or_create_environment(self, auto_create=False):
+        """Check for virtual environment and optionally create one in project root"""
+        if self._is_in_virtual_environment():
+            print("[OK] Running in a virtual environment")
+            return True
+        
         print("\n" + "="*60)
         print("[WARNING] You are not in a virtual environment!")
         print("It's recommended to create a virtual environment before installing packages.")
         print("="*60)
-
-        while True:
-            response = input("\nWould you like to create a virtual environment? (y/n): ").lower().strip()
+        
+        # Check if environment already exists in project root
+        env_name = "env"
+        env_path = os.path.join(self.DIR_PROJECT, env_name)
+        env_exists = os.path.exists(env_path) and os.path.isdir(env_path)
+        
+        if env_exists:
+            print(f"\n[INFO] Virtual environment found at: {env_path}")
+            print("However, you are not currently using it.")
+            print("\nTo activate the environment, run:")
+            if os.name == 'nt':  # Windows
+                print(f"  {env_path}\\Scripts\\activate")
+            else:  # Unix/Linux/macOS
+                print(f"  source {env_path}/bin/activate")
+            print("\nAfter activation, re-run this script to install packages.")
+            return False
+        
+        # Create environment if auto_create is True, otherwise prompt
+        if auto_create:
+            create_env = True
+        else:
+            while True:
+                response = input("\nWould you like to create a virtual environment? (y/n): ").lower().strip()
+                if response in ['y', 'yes']:
+                    create_env = True
+                    break
+                elif response in ['n', 'no']:
+                    create_env = False
+                    break
+                else:
+                    print("Please enter 'y' or 'n'.")
+        
+        if create_env:
+            user_env_name = input(f"Enter environment name (default: {env_name}): ").strip()
+            if user_env_name:
+                env_name = user_env_name
+                env_path = os.path.join(self.DIR_PROJECT, env_name)
             
-            if response in ['y', 'yes']:
-                env_name = input(f"Enter environment name (default: env): ").strip()
-                if not env_name:
-                    env_name = "env"
+            print(f"\nCreating virtual environment '{env_name}' in project directory...")
+            try:
+                # Create virtual environment in project root
+                subprocess.check_call([sys.executable, "-m", "venv", env_path])
+                print(f"[SUCCESS] Virtual environment '{env_name}' created successfully at: {env_path}")
+
+                # Install basic packages in the new environment
+                print(f"Installing basic packages in the new environment...")
+                if os.name == 'nt':  # Windows
+                    pip_path = os.path.join(env_path, "Scripts", "pip")
+                    python_path = os.path.join(env_path, "Scripts", "python")
+                else:  # Unix/Linux/macOS
+                    pip_path = os.path.join(env_path, "bin", "pip")
+                    python_path = os.path.join(env_path, "bin", "python")
                 
-                print(f"\nCreating virtual environment '{env_name}'...")
-                try:
-                    # Create virtual environment
-                    subprocess.check_call([sys.executable, "-m", "venv", env_name])
-                    print(f"[SUCCESS] Virtual environment '{env_name}' created successfully!")
-
-                    # Install pandas in the new environment
-                    print(f"Installing pandas in the new environment...")
-                    if os.name == 'nt':  # Windows
-                        pip_path = os.path.join(env_name, "Scripts", "pip")
-                    else:  # Unix/Linux/macOS
-                        pip_path = os.path.join(env_name, "bin", "pip")
+                # Upgrade pip first
+                subprocess.check_call([pip_path, "install", "--upgrade", "pip"])
+                print("[SUCCESS] pip upgraded")
+                
+                # Install pandas (required for config to work)
+                subprocess.check_call([pip_path, "install", "pandas>=1.3.0"])
+                print("[SUCCESS] pandas installed")
+                
+                # Provide activation instructions
+                print(f"\n" + "="*60)
+                print("ENVIRONMENT CREATED SUCCESSFULLY!")
+                print("="*60)
+                print(f"\nTo activate the environment, run:")
+                if os.name == 'nt':  # Windows
+                    print(f"  {env_path}\\Scripts\\activate")
+                else:  # Unix/Linux/macOS
+                    print(f"  source {env_path}/bin/activate")
+                print(f"\nOr use the python directly:")
+                print(f"  {python_path}")
+                print(f"\nAfter activation, re-run this script to install remaining packages.")
+                print("="*60)
+                
+                return False  # Return False because user needs to activate
                     
-                    subprocess.check_call([pip_path, "install", "pandas>=1.3.0"])
-                    print(f"[SUCCESS] pandas installed successfully!")
-                    
-
-                    # Provide activation instructions
-                    print(f"\nTo activate the environment, run:")
-                    if os.name == 'nt':  # Windows
-                        print(f"  {env_name}\\Scripts\\activate")
-                    else:  # Unix/Linux/macOS
-                        print(f"  source {env_name}/bin/activate")
-                    
-                    print(f"\nAfter activation, re-run this script to install remaining packages.")
-
-                    print("Exiting...")
-                    sys.exit(0)
-                    
-                except Exception as e:
-                    print(f"Error creating virtual environment: {str(e)}")
-                    print("Please create the environment manually and try again.")
-                    sys.exit(1)
-                    
-            elif response in ['n', 'no']:
-                print("\nProceeding without virtual environment...")
-                print("Note: This may install packages globally, which could cause conflicts.")
-                break
-            else:
-                print("Please enter 'y' or 'n'.")
+            except Exception as e:
+                print(f"[ERROR] Error creating virtual environment: {str(e)}")
+                print("Please create the environment manually and try again.")
+                return False
+        else:
+            print("\nProceeding without virtual environment...")
+            print("Note: This may install packages globally, which could cause conflicts.")
+            return False
+    
+    def _prompt_create_environment(self):
+        """Prompt user to create a virtual environment (deprecated, use _check_or_create_environment)"""
+        return self._check_or_create_environment(auto_create=False)
     
     def check_external_tools(self):
         """Check if required external tools are installed and accessible"""
@@ -912,9 +1037,9 @@ config = Config()
 DIR_DATA = config.DIR_DATA
 DIR_RESULTS = config.DIR_RESULTS
 FILE_P2P_CSV = config.FILE_P2P_CSV
-DIR_PDBBIND_V2020_PP = config.DIR_PDBBIND_V2020_PP
-DIR_SKEMPI_V2_WT = config.DIR_SKEMPI_V2_WT
-DIR_SKEMPI_V2_MT = config.DIR_SKEMPI_V2_MT
+DIR_V2020 = config.DIR_V2020
+DIR_WT = config.DIR_WT
+DIR_MT = config.DIR_MT
 DIR_PROJECT = config.DIR_PROJECT
 DATASET_CONFIG = config.DATASET_CONFIG
 
@@ -928,6 +1053,7 @@ TABLE_SKEMPI_V2_MT = DATASET_CONFIG.get('SKEMPI_V2_MT', {}).get('table', None)
 create_main_parser = config.create_main_parser
 parse_args = config.parse_args
 check_and_install_packages = config.check_and_install_packages
+check_or_create_environment = config.check_or_create_environment
 print_directory_structure = config.print_directory_structure
 generate_tables = config.generate_tables
 check_external_tools = config.check_external_tools
@@ -952,9 +1078,9 @@ __all__ = [
     'DIR_DATA',
     'DIR_RESULTS',
     'FILE_P2P_CSV',
-    'DIR_PDBBIND_V2020_PP',
-    'DIR_SKEMPI_V2_WT',
-    'DIR_SKEMPI_V2_MT',
+    'DIR_V2020',
+    'DIR_WT',
+    'DIR_MT',
     'DIR_PROJECT',
     'DATASET_CONFIG',
     'TABLE_P2P',
@@ -964,6 +1090,7 @@ __all__ = [
     'create_main_parser',
     'parse_args',
     'check_and_install_packages',
+    'check_or_create_environment',
     'print_directory_structure',
     'generate_tables',
     'check_external_tools',
@@ -992,8 +1119,12 @@ if __name__ == "__main__":
     
     # config.print_directory_structure()
     
-    # Check packages
-    config.check_and_install_packages()
+    # Check packages (this will also check/create virtual environment)
+    packages_ready = config.check_and_install_packages()
+    
+    if not packages_ready:
+        # Environment was created but not activated, exit gracefully
+        sys.exit(0)
 
     # Check external tools
     config.check_external_tools()

@@ -107,7 +107,7 @@ if choice == '1':
                 print("=" * 60)
                 print(f"Processing PDB ID: {pdb_id}")
                 
-                # Get partner1 and partner2 from the dataset table
+                # Get partnerA and partnerB from the dataset table
                 dataset_table = _config['table']
                 pdb_row = dataset_table[dataset_table['ID'] == pdb_id]
                 
@@ -115,8 +115,8 @@ if choice == '1':
                     print(f"[WARNING] PDB ID {pdb_id} not found in dataset table. Skipping...")
                     continue
                 
-                partner1 = pdb_row['partner1'].iloc[0]
-                partner2 = pdb_row['partner2'].iloc[0]
+                partner1 = pdb_row['partnerA'].iloc[0]
+                partner2 = pdb_row['partnerB'].iloc[0]
                 
                 # Create filepath for this PDB
                 filepath = os.path.join(_config['dir'], pdb_id)

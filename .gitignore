@@ -1,0 +1,10 @@
+src/p2p_bio/__pycache__/
+src/p2p_bio/build/
+src/p2p_bio/dist/
+src/p2p_bio/p2p_protein/*
+bin/*
+data/*
+__pycache__/*
+results/*
+*.pyc
+src/__pycache__/
