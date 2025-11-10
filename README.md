@@ -1,49 +1,8 @@
-# Protein-Protein Interaction Binding Affinity
+# PLNet: Persistent Laplacian Neural Network for Protein-Protein Binding Free Energy Prediction
 
 ## Description
-```bash
-PL_PPI_BA_prediction/
-│
-├── bin/                           # Executables and binary files
-│   ├── profix                     # ProFix executable for PDB structure processing
-│   ├── test_profix.py             # Test script for ProFix functionality
-│   ├── test_mutation_structure.py # Test script for mutation structure generation
-│   ├── test_mutation_structure_standalone.py # Standalone mutation testing
-│   ├── jackal_64bit/              # Jackal executable directory
-│   ├── jackal_64bit.tar.gz        # Jackal archive
-│   └── jackal.dir                 # Jackal configuration
-│
-├── data/                          # Dataset files and directories
-│   ├── P2P.csv                    # Main protein-protein interaction dataset
-│   ├── PDBbind_v2020_PP_anti.csv  # PDBbind v2020 processed data
-│   ├── skempi_v2                  # SKEMPI v2 dataset reference
-│   ├── skempi_v2_wt_anti.csv      # SKEMPI v2 wild-type processed data
-│   └── Example/                   # Example PDB files for testing
-│
-├── src/                           # Source code
-│   ├── data_generation.py         # Main data processing pipeline
-│   ├── machine_learning.py        # Machine learning models and training
-│   └── utils/                     # Utility modules
-│       ├── __init__.py            # Package initialization
-│       ├── constant.py            # Constants and configuration
-│       ├── feature_parser.py      # Protein feature extraction (ESM, biophysics)
-│       ├── helper.py              # General utility functions
-│       ├── mutation_structure.py  # Protein mutation structure generation
-│       ├── pairwise_parser.py     # Protein sequence comparison and similarity
-│       ├── persistent.py          # Persistent homology calculations
-│       ├── plot.py                # Visualization and plotting functions
-│       ├── table_generation.py    # Dataset table generation utilities
-│       └── pyprotein/             # C++ extensions for protein analysis
-│           ├── prot.cpp           # C++ source code
-│           └── prot.cpython-*.so  # Compiled extensions
-│
-├── config/                        # Configuration files
-│   ├── argparser.py               # Command-line argument parsing
-│   ├── packages.py                # Package dependencies and management
-│   └── path.py                    # Path configurations
-│
-├── results/                       # Output directory for results
-└── .gitignore                     # Git ignore rules
+```
+This manual is for the code implementation of paper "PLNet: Persistent Laplacian Neural Network for Protein-Protein Binding Free Energy Prediction"
 ```
 
 **Note:**
