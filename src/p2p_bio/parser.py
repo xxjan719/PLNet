@@ -473,12 +473,13 @@ class parser_pdb:
         pass
 
 def test_parser_pdb():
-    PDBID = '6um5'
-    filepath = '../data/PDBbind_v2020_PP'
+    PDBID = '1A22'
+    filepath = '../../data/Example'
     partner1 = 'A'
-    partner2 = 'CD'
+    partner2 = 'B'
     test_pdb = parser_pdb(PDBID, filepath, partner1, partner2, 16)
     pass
 
 if __name__ =="__main__":
-    test_parser_pqr('1DVF', '.')
+    #test_parser_pqr('1DVF', '.')
+    test_parser_pdb()

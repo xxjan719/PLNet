@@ -772,7 +772,7 @@ def generate_mutation_structure(wt_pdb_path: str,
     ) 
 if __name__ == "__main__":
     # Example usage
-    MT_path = "../../data/Example"
+    MT_path = "../../data/Example/mutation_experiment"
     # Only run the example if the provided WT PDB path exists.
     if not os.path.exists(MT_path):
         print(f"[INFO] Example WT path not found ({MT_path}). Skipping example run in __main__. Provide a valid PDB path to run the example.")

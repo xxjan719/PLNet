@@ -58,7 +58,7 @@ class protein_complex:
                        partner1: str, 
                        partner2: str, 
                  check_structure: bool = False, generate_structure_files: bool = True,
-                 persistent_homology: bool = False, biophysics: bool = False, sequence: bool = False,
+                 persistent_homology: bool = False, biophysics: bool = False, sequence: bool = True,
                  read_features: bool = False):
         self.PDBID = PDBID
         self.filepath = filepath
@@ -94,11 +94,11 @@ class protein_complex:
         # Required input: pqr, pdb files, and the results of MIBPB
         # Construct the features for partner 1 and partner 2, seperately
         #=========================================================================================================
-        if biophysics:
-            biophysics_features_partner1 = self.biophysics_features(partner1)
-            np.savetxt(os.path.join(self.filepath, self.PDBID+'_'+self.partner1+'_biophysics.txt'), biophysics_features_partner1)
-            biophysics_features_partner2 = self.biophysics_features(partner2)
-            np.savetxt(os.path.join(self.filepath, self.PDBID+'_'+self.partner2+'_biophysics.txt'), biophysics_features_partner2)
+        # if biophysics:
+        #     biophysics_features_partner1 = self.biophysics_features(partner1)
+        #     np.savetxt(os.path.join(self.filepath, self.PDBID+'_'+self.partner1+'_biophysics.txt'), biophysics_features_partner1)
+        #     biophysics_features_partner2 = self.biophysics_features(partner2)
+        #     np.savetxt(os.path.join(self.filepath, self.PDBID+'_'+self.partner2+'_biophysics.txt'), biophysics_features_partner2)
         #=========================================================================================================
 
         #=========================================================================================================
@@ -106,6 +106,7 @@ class protein_complex:
         # Required input: sequences are generated from the pdb file of the binding interface
         #=========================================================================================================
         if sequence:
+            print("[INFO] Generating sequence features ...")
             self.sequence_features(PDBID, filepath, partner1, partner2)
         #=========================================================================================================
 
@@ -123,12 +124,53 @@ class protein_complex:
         After save the features, we can load the features directly using this function
         '''
     
-        # import torch, esm
-        partner1_sequence, partner2_sequence = self.generate_sequences()
+        import torch, esm
+        
     
-        # model, alphabet = esm.pretrained.esm1b_t33_650M_UR50S()
-        # batch_converter = alphabet.get_batch_converter()
-        # model.eval()
+        # Load sequences and compute ESM embeddings (mean-pooled per-sequence)
+        sequence_list, partner1_chains, partner2_chains = self.generate_sequences()
+        if not sequence_list:
+            return
+        print(f"[INFO] Generating ESM2 features for {self.PDBID} ...")
+        # Use ESM2 (fair-esm v2). Choose a small/medium model variant to balance memory.
+        model, alphabet = esm.pretrained.esm2_t6_8M_UR50D()
+        batch_converter = alphabet.get_batch_converter()
+        model.eval()
+
+        labels, strs, tokens = batch_converter(sequence_list)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        model.to(device)
+        tokens = tokens.to(device)
+        with torch.no_grad():
+            # pick the top repr layer dynamically (ESM models expose num_layers)
+            try:
+                repr_layer = model.num_layers
+            except Exception:
+                repr_layer = 6
+            results = model(tokens, repr_layers=[repr_layer], return_contacts=False)
+        token_reps = results['representations'][repr_layer]
+
+        # mean-pool residue tokens (exclude BOS/CLS token at index 0 and any padding)
+        per_chain_emb = {}
+        for i, (chain_id, seq) in enumerate(sequence_list):
+            L = len(seq)
+            emb = token_reps[i, 1:L+1].mean(0).cpu().numpy()
+            per_chain_emb[chain_id] = emb
+
+        # aggregate per-partner by averaging chains belonging to the partner
+        p1_embs = [per_chain_emb[c] for c in partner1_chains if c in per_chain_emb]
+        p2_embs = [per_chain_emb[c] for c in partner2_chains if c in per_chain_emb]
+        if p1_embs:
+            p1_vec = np.mean(p1_embs, axis=0)
+        else:
+            p1_vec = np.zeros(token_reps.size(2), dtype=float)
+        if p2_embs:
+            p2_vec = np.mean(p2_embs, axis=0)
+        else:
+            p2_vec = np.zeros_like(p1_vec)
+
+        esm_feature = np.concatenate([p1_vec, p2_vec])
+        np.savetxt(os.path.join(self.filepath, self.PDBID + '_esm_features.txt'), esm_feature)
     
         return 
 
@@ -539,7 +581,7 @@ if __name__ == '__main__':
                                  check_structure=True,
                                  persistent_homology=True, 
                                  read_features=False,
-                                 sequence=False)
+                                 sequence=True)
         else:
             print(f"No partner information found for {pdb}")
 

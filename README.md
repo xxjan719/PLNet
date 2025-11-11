@@ -5,12 +5,11 @@
 This manual is for the code implementation of paper "PLNet: Persistent Laplacian Neural Network for Protein-Protein Binding Free Energy Prediction"
 ```
 
-**Note:**
+## Comments
 - Primary dataset: place `P2P.csv` in the `data/` directory (i.e. `data/P2P.csv`).
 - The repository includes tooling and an optional virtual environment under `env/`; add generated environments and other local artifacts to `.gitignore` so they are not committed.
 - Start by running `src/config.py` — setup and configuration instructions will be printed to the terminal.
 - The `bin/` directory holds external executables (e.g. JACKAL, SCAP, ProFix). You can populate `bin/` yourself following the instructions printed by `src/config.py`, or request prebuilt binaries from xingjianxu@ufl.edu.
-- The system includes comprehensive mutation structure generation capabilities using SCAP
 - All datasets support feature extraction including ESM embeddings, biophysical properties, and pairwise similarity matrices
 
 ## Dependencies
@@ -27,90 +26,16 @@ This manual is for the code implementation of paper "PLNet: Persistent Laplacian
 
 ## Usage
 
-### Mutation Structure Generation
+### Install Environment and package
 ```python
-# Single mutation generation
-from src.utils.mutation_structure import generate_mutation_structure
+python src/config.py
+```
+Then redo again for install package.
 
-# Generate a mutation
-mt_path = generate_mutation_structure(
-    wt_pdb_path="wild_type.pdb",
-    output_base_name="mutation_output",
-    mutation_chain="A",
-    mutation_residue_id="83",
-    mutation_residue="A"  # Alanine
-)
-
-# Generate mutation from string format "PDBID_ChainID_WildResidue_ResidueID_MutateResidue"
-from src.utils.mutation_structure import generate_mutation_structure_from_string, parse_mutation_string
-
-# Parse mutation string (e.g., "1JTG_A_N_100_A" means PDB 1JTG, Chain A, Wild residue N, Residue ID 100, Mutate to A)
-mutation_info = parse_mutation_string("1JTG_A_N_100_A")
-print(mutation_info)  # {'pdb_id': '1JTG', 'chain_id': 'A', 'wild_residue': 'N', ...}
-
-# Generate mutation directly from string
-mt_path = generate_mutation_structure_from_string(
-    mutation_string="1JTG_A_N_100_A",
-    wt_pdb_path="1JTG.pdb",
-    output_base_name="mutation_output"
-)
-
-# Batch mutation generation
-from src.utils.mutation_structure import MutationStructureGenerator
-
-generator = MutationStructureGenerator()
-
-# Batch from individual parameters
-mutations = [
-    {
-        'wt_pdb_path': 'protein1.pdb',
-        'output_base_name': 'mut1',
-        'mutation_chain': 'A',
-        'mutation_residue_id': '83',
-        'mutation_residue': 'A'
-    },
-    # ... more mutations
-]
-results = generator.batch_generate_mutations(mutations)
-
-# Batch from mutation strings
-mutation_strings = ["1JTG_A_N_100_A", "2ABC_B_L_45_G"]
-wt_pdb_paths = ["1JTG.pdb", "2ABC.pdb"]
-output_names = ["mut1", "mut2"]
-results = generator.batch_generate_mutations_from_strings(
-    mutation_strings, wt_pdb_paths, output_names
-)
-
-# Test mutation generation
-python bin/test_mutation_structure.py --test deps  # Test dependencies
-python bin/test_mutation_structure.py --test parse  # Test string parsing
-python bin/test_mutation_structure.py --test single --wt-pdb your_protein.pdb  # Test single mutation
-python bin/test_mutation_structure.py --test string --wt-pdb your_protein.pdb --mutation-string "1JTG_A_N_100_A"  # Test string mutation
+### Data Generation for P2P
+```python
+python src/data_preparation.py  # Prepare all P2P and generate the feature for ESM and Persistent Homology
 ```
 
-### Data Processing with ProFix
-```python
-# Data Processing with ProFix
-from src.utils.profix_handler import ProFixHandler
 
-# Process a single PDB file
-success = ProFixHandler.process_pdb("path/to/file.pdb")
 
-# Batch process multiple files
-results = ProFixHandler.batch_process_pdbs(["file1.pdb", "file2.pdb"])
-
-# Validate processed files
-is_valid, message = ProFixHandler.validate_pdb("processed_file.pdb")
-
-# Data Generation and 10-Fold Pairwise Matrix
-python src/data_generation.py  # Process all datasets and generate pairwise matrices/plots
-```
-
-## Comments
-- Variable names: Follow Python naming conventions
-- Code structure: Modular design with clear separation of concerns
-- Documentation: Comprehensive docstrings and comments
-- Path handling: Use centralized path configuration
-- Binary management: Keep executables in bin directory
-- Error handling: Comprehensive error checking and reporting
-- **External tools**: SCAP and ProFix must be installed and available in system PATH
