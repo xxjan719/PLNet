@@ -123,7 +123,7 @@ class Config:
             'seaborn': '0.11.2',      # Statistical data visualization
             'scipy': '1.7.1',         # Scientific computing
             'cython': '0.29.0',       # Cython for C++ extensions
-            'pdb2pqr': '3.7.1',       # PDB2PQR tool (pip package)
+            'pdb2pqr': '3.6.1',       # PDB2PQR tool (pip package)
         }
     
     def _setup_arguments(self):

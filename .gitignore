@@ -1,6 +1,8 @@
 #===================for archive folder =======================
 archive/
 #===================for src/p2p_bio folder ===================
+src/.ipynb_checkpoints/
+src/p2p_bio/.ipynb_checkpoints/
 src/p2p_bio/__pycache__/
 src/p2p_bio/build/
 src/p2p_bio/dist/
@@ -20,6 +22,7 @@ data/MT/
 data/V2020_TABLE/
 data/WT_TABLE/
 data/MT_TABLE/
+data/Example/.ipynb_checkpoints/
 data/Example/mutation_experiment/1A22_A_M14_A.pdb
 data/Example/mutation_experiment/1A22_A_M14_A.pqr
 data/Example/mutation_experiment/1A22_A_M14_A.log

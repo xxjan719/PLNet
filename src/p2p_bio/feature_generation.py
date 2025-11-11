@@ -117,60 +117,204 @@ class protein_complex:
         self.biophysics_partner2 = np.loadtxt(os.path.join(self.filepath, self.PDBID+'_'+self.partner2+'_biophysics.txt'))
         self.sequence = np.loadtxt(os.path.join(self.filepath, self.PDBID+'_esm_features.txt'))
 
-    def sequence_features(self, PDBID, filepath, partner1, partner2):
+    def sequence_features(self, PDBID, filepath, partner1, partner2, esm_model='esm1b_t33_650M_UR50S', extraction_method='all_layers'):
         '''
         Generate the sequence features using ESM
         NOTE: loading ESM is time-consuming, so it is better to load it once and use it for all complexes
         After save the features, we can load the features directly using this function
+        
+        Args:
+            esm_model: ESM model to use. Options:
+                - 'auto': Try to detect from existing features (default)
+                - 'esm2_t6_8M_UR50D': ESM2 8M (320 dims -> 640 total with mean_pool)
+                - 'esm2_t12_35M_UR50D': ESM2 35M (480 dims -> 960 total with mean_pool)
+                - 'esm2_t33_650M_UR50D': ESM2 650M (1280 dims -> 2560 total with mean_pool)
+                - 'esm1b_t33_650M_UR50S': ESM1b 650M (1280 dims -> 2560 total with mean_pool)
+                - 'esm1_t34_670M_UR50S': ESM1 670M (1280 dims -> 2560 total with mean_pool)
+            extraction_method: How to extract features from the model. Options:
+                - 'mean_pool': Mean pool all residues (default)
+                - 'last_layer': Use only the last layer representation
+                - 'all_layers': Concatenate all layer representations (may produce larger dimensions)
+                - 'cls_token': Use the CLS/BOS token representation
         '''
     
         import torch, esm
         
-    
-        # Load sequences and compute ESM embeddings (mean-pooled per-sequence)
-        sequence_list, partner1_chains, partner2_chains = self.generate_sequences()
-        if not sequence_list:
-            return
-        print(f"[INFO] Generating ESM2 features for {self.PDBID} ...")
-        # Use ESM2 (fair-esm v2). Choose a small/medium model variant to balance memory.
-        model, alphabet = esm.pretrained.esm2_t6_8M_UR50D()
-        batch_converter = alphabet.get_batch_converter()
-        model.eval()
-
-        labels, strs, tokens = batch_converter(sequence_list)
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model.to(device)
-        tokens = tokens.to(device)
-        with torch.no_grad():
-            # pick the top repr layer dynamically (ESM models expose num_layers)
+        try:
+            # Check existing feature file to determine model if needed
+            existing_feature_file = os.path.join(self.filepath, self.PDBID + '_esm_features.txt')
+            target_dim = None
+            if os.path.exists(existing_feature_file):
+                existing_features = np.loadtxt(existing_feature_file)
+                target_dim = len(existing_features)
+                print(f"[INFO] Existing ESM feature file found with {target_dim} dimensions")
+                if esm_model == 'auto':
+                    # Try to determine model from dimensions
+                    if target_dim == 640:
+                        esm_model = 'esm2_t6_8M_UR50D'
+                    elif target_dim == 960:
+                        esm_model = 'esm2_t12_35M_UR50D'
+                    elif target_dim == 2560:
+                        esm_model = 'esm2_t33_650M_UR50D'  # or esm1b
+                    elif target_dim == 3890:
+                        # 3890 = 1945 per partner - need to find matching model
+                        print(f"[WARNING] 3890 dimensions detected - this doesn't match standard ESM models")
+                        print(f"[WARNING] This might be ESM1 with all layers concatenated or different extraction")
+                        print(f"[WARNING] Trying ESM1b with all layers extraction...")
+                        esm_model = 'esm1b_t33_650M_UR50S'
+                        extraction_method = 'all_layers'  # Try all layers for 3890 dims
+                    else:
+                        print(f"[WARNING] Unknown dimension {target_dim}, using default esm2_t6_8M_UR50D")
+                        esm_model = 'esm2_t6_8M_UR50D'
+                    print(f"[INFO] Auto-selected model: {esm_model}")
+            
+            # Load sequences and compute ESM embeddings (mean-pooled per-sequence)
+            sequence_list, partner1_chains, partner2_chains = self.generate_sequences()
+            if not sequence_list:
+                print(f"[WARNING] No sequences found for {self.PDBID}. Skipping ESM feature generation.")
+                return
+            
+            print(f"[INFO] Generating ESM features for {self.PDBID} ...")
+            print(f"[INFO] Found {len(sequence_list)} chains: {[s[0] for s in sequence_list]}")
+            print(f"[INFO] Using ESM model: {esm_model}")
+            
+            # Load the appropriate ESM model
+            print(f"[INFO] Loading ESM model...")
             try:
-                repr_layer = model.num_layers
-            except Exception:
-                repr_layer = 6
-            results = model(tokens, repr_layers=[repr_layer], return_contacts=False)
-        token_reps = results['representations'][repr_layer]
+                if esm_model == 'esm2_t6_8M_UR50D':
+                    model, alphabet = esm.pretrained.esm2_t6_8M_UR50D()
+                elif esm_model == 'esm2_t12_35M_UR50D':
+                    model, alphabet = esm.pretrained.esm2_t12_35M_UR50D()
+                elif esm_model == 'esm2_t33_650M_UR50D':
+                    model, alphabet = esm.pretrained.esm2_t33_650M_UR50D()
+                elif esm_model == 'esm1b_t33_650M_UR50S':
+                    model, alphabet = esm.pretrained.esm1b_t33_650M_UR50S()
+                elif esm_model == 'esm1_t34_670M_UR50S':
+                    try:
+                        model, alphabet = esm.pretrained.esm1_t34_670M_UR50S()
+                    except AttributeError:
+                        print(f"[WARNING] esm1_t34_670M_UR50S not available, trying esm1b_t33_650M_UR50S")
+                        model, alphabet = esm.pretrained.esm1b_t33_650M_UR50S()
+                else:
+                    # Default fallback
+                    print(f"[WARNING] Unknown model {esm_model}, using esm2_t6_8M_UR50D")
+                    model, alphabet = esm.pretrained.esm2_t6_8M_UR50D()
+            except Exception as e:
+                print(f"[ERROR] Failed to load ESM model {esm_model}: {e}")
+                print(f"[ERROR] This might be due to:")
+                print(f"  - Network connectivity issues (model needs to be downloaded)")
+                print(f"  - Missing or corrupted model cache")
+                print(f"  - Version incompatibility with fair-esm package")
+                print(f"[INFO] Available models in fair-esm:")
+                print(f"  - esm.pretrained.esm2_t6_8M_UR50D()")
+                print(f"  - esm.pretrained.esm2_t12_35M_UR50D()")
+                print(f"  - esm.pretrained.esm2_t33_650M_UR50D()")
+                print(f"  - esm.pretrained.esm1b_t33_650M_UR50S()")
+                print(f"  - esm.pretrained.esm1_t34_670M_UR50S() (if available)")
+                raise
+            
+            print(f"[INFO] Extraction method: {extraction_method}")
+            
+            batch_converter = alphabet.get_batch_converter()
+            model.eval()
 
-        # mean-pool residue tokens (exclude BOS/CLS token at index 0 and any padding)
-        per_chain_emb = {}
-        for i, (chain_id, seq) in enumerate(sequence_list):
-            L = len(seq)
-            emb = token_reps[i, 1:L+1].mean(0).cpu().numpy()
-            per_chain_emb[chain_id] = emb
+            print(f"[INFO] Converting sequences to tokens...")
+            labels, strs, tokens = batch_converter(sequence_list)
+            
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            print(f"[INFO] Using device: {device}")
+            model.to(device)
+            tokens = tokens.to(device)
+            
+            print(f"[INFO] Running ESM model inference...")
+            with torch.no_grad():
+                # Determine number of layers
+                try:
+                    num_layers = model.num_layers
+                except Exception:
+                    # For ESM1, might need different handling
+                    if 'esm1_t34' in esm_model.lower():
+                        num_layers = 34  # ESM1 has 34 layers
+                    elif 'esm1' in esm_model.lower():
+                        num_layers = 33  # ESM1b has 33 layers
+                    else:
+                        num_layers = 6
+                
+                # Extract representations based on extraction method
+                if extraction_method == 'all_layers':
+                    # Get all layers and concatenate
+                    print(f"[INFO] Extracting from all {num_layers} layers...")
+                    results = model(tokens, repr_layers=list(range(num_layers + 1)), return_contacts=False)
+                    # Concatenate all layer representations
+                    all_reps = []
+                    for layer_idx in range(num_layers + 1):
+                        if layer_idx in results['representations']:
+                            all_reps.append(results['representations'][layer_idx])
+                    # Stack and concatenate along feature dimension
+                    token_reps = torch.cat(all_reps, dim=-1)  # Concatenate along embedding dimension
+                elif extraction_method == 'cls_token':
+                    # Use CLS/BOS token (first token)
+                    results = model(tokens, repr_layers=[num_layers], return_contacts=False)
+                    token_reps = results['representations'][num_layers]
+                    # Use only the first token (CLS/BOS)
+                    token_reps = token_reps[:, 0:1, :]  # Keep dimension for consistency
+                else:
+                    # Default: use last layer
+                    results = model(tokens, repr_layers=[num_layers], return_contacts=False)
+                    token_reps = results['representations'][num_layers]
+            
+            embedding_dim = token_reps.size(2)
+            print(f"[INFO] Model embedding dimension: {embedding_dim} (after {extraction_method})")
 
-        # aggregate per-partner by averaging chains belonging to the partner
-        p1_embs = [per_chain_emb[c] for c in partner1_chains if c in per_chain_emb]
-        p2_embs = [per_chain_emb[c] for c in partner2_chains if c in per_chain_emb]
-        if p1_embs:
-            p1_vec = np.mean(p1_embs, axis=0)
-        else:
-            p1_vec = np.zeros(token_reps.size(2), dtype=float)
-        if p2_embs:
-            p2_vec = np.mean(p2_embs, axis=0)
-        else:
-            p2_vec = np.zeros_like(p1_vec)
+            # Extract embeddings based on method
+            print(f"[INFO] Processing embeddings...")
+            per_chain_emb = {}
+            for i, (chain_id, seq) in enumerate(sequence_list):
+                L = len(seq)
+                if extraction_method == 'cls_token':
+                    # Use CLS token directly
+                    emb = token_reps[i, 0].cpu().numpy()
+                else:
+                    # Mean pool over sequence (exclude BOS/CLS token at index 0 and any padding)
+                    emb = token_reps[i, 1:L+1].mean(0).cpu().numpy()
+                per_chain_emb[chain_id] = emb
 
-        esm_feature = np.concatenate([p1_vec, p2_vec])
-        np.savetxt(os.path.join(self.filepath, self.PDBID + '_esm_features.txt'), esm_feature)
+            # aggregate per-partner by averaging chains belonging to the partner
+            p1_embs = [per_chain_emb[c] for c in partner1_chains if c in per_chain_emb]
+            p2_embs = [per_chain_emb[c] for c in partner2_chains if c in per_chain_emb]
+            
+            if not p1_embs:
+                print(f"[WARNING] No embeddings found for partner1 chains: {partner1_chains}")
+            if not p2_embs:
+                print(f"[WARNING] No embeddings found for partner2 chains: {partner2_chains}")
+            
+            if p1_embs:
+                p1_vec = np.mean(p1_embs, axis=0)
+            else:
+                p1_vec = np.zeros(embedding_dim, dtype=float)
+            if p2_embs:
+                p2_vec = np.mean(p2_embs, axis=0)
+            else:
+                p2_vec = np.zeros_like(p1_vec)
+
+            esm_feature = np.concatenate([p1_vec, p2_vec])
+            print(f"[INFO] Total ESM feature dimension: {len(esm_feature)} (partner1: {len(p1_vec)}, partner2: {len(p2_vec)})")
+            
+            if target_dim and len(esm_feature) != target_dim:
+                print(f"[WARNING] Generated features ({len(esm_feature)}) don't match existing features ({target_dim})")
+                print(f"[WARNING] You may need to use a different model or extraction method")
+            
+            output_file = os.path.join(self.filepath, self.PDBID + '_esm_features.txt')
+            np.savetxt(output_file, esm_feature)
+            print(f"[SUCCESS] ESM features saved to {output_file}")
+        
+        except Exception as e:
+            print(f"[ERROR] Failed to generate ESM2 features for {self.PDBID}: {e}")
+            print(f"[ERROR] Error type: {type(e).__name__}")
+            import traceback
+            print(f"[ERROR] Traceback:")
+            traceback.print_exc()
+            raise
     
         return 
 
@@ -181,31 +325,47 @@ class protein_complex:
 
         sequence = []
 
-        pdb_structure = parser_pdb(self.PDBID, self.filepath, self.partner1, self.partner2, default_cutoff) 
-        continuous_binding_structure, partner1, partner2 = pdb_structure.read_continuous_binding_interface(partner_update=True)
+        try:
+            pdb_structure = parser_pdb(self.PDBID, self.filepath, self.partner1, self.partner2, default_cutoff) 
+            continuous_binding_structure, partner1, partner2 = pdb_structure.read_continuous_binding_interface(partner_update=True)
+            
+            print(f"[INFO] Updated partner1: {partner1}; partner2: {partner2}")
 
-        ppb = PPBuilder()
-        for pp in ppb.build_peptides(continuous_binding_structure, aa_only=False):
-            chain_ids = pp[0].parent.id # residue's parent is the chain
-            if chain_ids in self.partner1 or chain_ids in self.partner2:
-                if len(pp.get_sequence()) > 1022:
-                    exit('The sequence is too long. Exit...')
-                    # break the sequence into two parts
-                    sequence.append((chain_ids+'_1', str(pp.get_sequence()[:1000])))
-                    sequence.append((chain_ids+'_2', str(pp.get_sequence()[1000:])))
-                    if len(pp.get_sequence()) > 2000:
+            ppb = PPBuilder()
+            for pp in ppb.build_peptides(continuous_binding_structure, aa_only=False):
+                chain_ids = pp[0].parent.id # residue's parent is the chain
+                # Use the updated partner1 and partner2 lists, not the original self.partner1/self.partner2 strings
+                if chain_ids in partner1 or chain_ids in partner2:
+                    seq = pp.get_sequence()
+                    if len(seq) > 1022:
+                        print(f"[ERROR] The sequence for chain {chain_ids} is too long ({len(seq)} residues). Maximum is 1022.")
                         exit('The sequence is too long. Exit...')
-                else:
-                    sequence.append((chain_ids, str(pp.get_sequence())))
+                        # break the sequence into two parts
+                        sequence.append((chain_ids+'_1', str(seq[:1000])))
+                        sequence.append((chain_ids+'_2', str(seq[1000:])))
+                        if len(seq) > 2000:
+                            exit('The sequence is too long. Exit...')
+                    else:
+                        sequence.append((chain_ids, str(seq)))
 
-        # check: for some cases, only one residue, need to remove that chain
-        sequence_chains = []
-        for sequence_pair in sequence:
-            sequence_chains.append(sequence_pair[0])
-        partner1 = [chain for chain in partner1 if chain in sequence_chains]
-        partner2 = [chain for chain in partner2 if chain in sequence_chains]
+            # check: for some cases, only one residue, need to remove that chain
+            sequence_chains = []
+            for sequence_pair in sequence:
+                sequence_chains.append(sequence_pair[0])
+            partner1 = [chain for chain in partner1 if chain in sequence_chains]
+            partner2 = [chain for chain in partner2 if chain in sequence_chains]
+            
+            if not sequence:
+                print(f"[WARNING] No sequences generated for {self.PDBID}")
+                print(f"[WARNING] Partner1 chains: {partner1}, Partner2 chains: {partner2}")
+                print(f"[WARNING] Found sequence chains: {sequence_chains}")
 
-        return sequence, partner1, partner2
+            return sequence, partner1, partner2
+        except Exception as e:
+            print(f"[ERROR] Failed to generate sequences for {self.PDBID}: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def _check_structure(self) -> None:
         pdb_file_partner1 = os.path.join(self.filepath, self.PDBID+'_'+self.partner1+'.pdb')
