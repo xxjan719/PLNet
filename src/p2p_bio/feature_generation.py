@@ -2,7 +2,7 @@
 Author: Xingjian Xu
 Email:xingjianxu@ufl.edu
 Data: 06/04/2024
-LastEditTime: 06/18/2025
+LastEditTime: 11/10/2025
 """
 import os
 import sys
@@ -31,7 +31,7 @@ from config import DIR_DATA, TABLE_PDBBIND_V2020_PP, TABLE_SKEMPI_V2_WT, TABLE_S
 
 # Import local modules
 try:
-    from .constant import three_to_one, EleLength, default_cutoff, ElementList, AminoA, AALength
+    from .constant import EleLength, default_cutoff
     from .parser import parser_pdb, parser_pqr
     from .persistent import (
         generate_rips_complex, 
@@ -40,9 +40,9 @@ try:
         generate_persistent_spectra
     )
     from .utils import use_profix, save_pdb
-except ImportError:
+except:
     # Fallback for when running as script
-    from p2p_bio.constant import three_to_one, EleLength, default_cutoff, ElementList, AminoA, AALength
+    from p2p_bio.constant import EleLength, default_cutoff
     from p2p_bio.parser import parser_pdb, parser_pqr
     from p2p_bio.persistent import (
         generate_rips_complex, 
@@ -53,7 +53,10 @@ except ImportError:
     from p2p_bio.utils import use_profix, save_pdb
 
 class protein_complex:
-    def __init__(self, PDBID: str, filepath: str, partner1: str, partner2: str, 
+    def __init__(self, PDBID: str, 
+                       filepath: str, 
+                       partner1: str, 
+                       partner2: str, 
                  check_structure: bool = False, generate_structure_files: bool = True,
                  persistent_homology: bool = False, biophysics: bool = False, sequence: bool = False,
                  read_features: bool = False):
@@ -192,8 +195,14 @@ class protein_complex:
             os.system('wget https://files.rcsb.org/download/'+self.PDBID+'.pdb')
         pdb_file_name_backup = os.path.join(self.filepath, self.PDBID+'_backup.pdb')
         os.system(f'cp {pdb_file_name} {pdb_file_name_backup}')
-
-        use_profix(self.PDBID, self.filepath)
+        profix_marker_file = os.path.join(self.filepath, f"{self.PDBID}_profix_processing.txt")
+        if os.path.exists(profix_marker_file):
+            print(f"[INFO] Profix has been applied to {self.PDBID}, skip profix step.")
+        else:
+            print(f"[INFO] Running profix processing for {self.PDBID} ...")
+            use_profix(self.PDBID, self.filepath)
+            with open(profix_marker_file, 'w') as f:
+                f.write("Profix processing completed.\n")
 
         pdb_structure = parser_pdb(self.PDBID, self.filepath, self.partner1, self.partner2, default_cutoff) 
         structure = pdb_structure.read_continuous_binding_interface()
@@ -511,24 +520,19 @@ def load_training_features(features:str='PPI',
 
 
 if __name__ == '__main__':
-    print("This is a feature parser module for protein-protein interaction analysis.")
+    print("[INFO] This is a feature parser module for protein-protein interaction analysis.")
 
-    # X,Y,ID = generation_fundamental_feature_dataset(
-    #     path=os.path.join('..','..','data',),
-    #     method='All',
-    #     data_type='MT'
-    # )
-    # print(f'X shape: {X.shape}, Y shape: {Y.shape}, ID shape: {ID.shape}')
-    pdbID = ["1A22","2FTL"] #
+    pdbID = ["1A22"] #
     for pdb in pdbID:
         # Get partner information from config tables
-        selected_ID_table = TABLE_PDBBIND_V2020_PP[TABLE_PDBBIND_V2020_PP['ID'] == pdb]
+        selected_ID_table = TABLE_SKEMPI_V2_WT[TABLE_SKEMPI_V2_WT['ID'] == pdb]
         if not selected_ID_table.empty:
-            partner1 = list(selected_ID_table['proteinA'])[0]
-            partner2 = list(selected_ID_table['proteinB'])[0]
+            partner1 = list(selected_ID_table['partnerA'])[0]
+            partner2 = list(selected_ID_table['partnerB'])[0]
             
-            pc = protein_complex(PDBID=pdb, 
-                                 filepath=os.path.join(DIR_DATA, "PDBbind_V2020_PP", pdb),
+
+            pc = protein_complex(PDBID=pdb,
+                                 filepath=os.path.join(DIR_DATA, "Example"),
                                  partner1=partner1,
                                  partner2=partner2,
                                  generate_structure_files=True,

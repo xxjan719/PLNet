@@ -1,10 +1,45 @@
+#===================for archive folder =======================
+archive/
+#===================for src/p2p_bio folder ===================
 src/p2p_bio/__pycache__/
 src/p2p_bio/build/
 src/p2p_bio/dist/
 src/p2p_bio/p2p_protein/*
+src/p2p_bio/p2p_protein/
+src/p2p_bio/pyprotein/
+#===================for bin folder ===================
 bin/*
-data/*
-__pycache__/*
+bin/
+bin/jackal_64bit/
+#===================for env folder ===================
+env/
+#===================for data folder ===================
+data/V2020/
+data/WT/
+data/MT/
+data/V2020_TABLE/
+data/WT_TABLE/
+data/MT_TABLE/
+data/Example/1A22_A.pdb
+data/Example/1A22_B.pdb
+data/Example/1A22_backup.pdb
+data/Example/jackal.dir
+data/Example/1A22_fix.pdb
+data/Example/1A22_A_M14_A.pdb
+data/Example/1A22_profix_processing.txt
+data/Example/1A22_persistent_homology_aa.txt
+data/Example/1A22_persistent_homology_es.txt
+data/Example/1A22_biophysics_partner1.txt
+data/Example/1A22_biophysics_partner2.txt
+data/Example/1A22_esm_features.txt
+data/wt_Table
+data/mt_Table
+data/v2020_Table
+#===================for results folder ===================
 results/*
+
+#===================Python cache files ===================
+__pycache__/*
 *.pyc
 src/__pycache__/
+

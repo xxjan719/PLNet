@@ -93,15 +93,16 @@ class Config:
         self.DATASET_CONFIG = {
             'V2020':{
                 'name': 'PDBbind_v2020_PP',
-                'suffix': 'PDBbind_v2020_PP',
+                # short suffix used for feature file names and directories
+                'suffix': 'v2020',
             },
             'WT':{
                 'name': 'SKEMPI_v2_WT',
-                'suffix': 'SKEMPI_v2_WT',
+                'suffix': 'wt',
             },
             'MT':{
                 'name': 'SKEMPI_v2_MT',
-                'suffix': 'SKEMPI_v2_MT',
+                'suffix': 'mt',
             },
 
         }
@@ -122,6 +123,7 @@ class Config:
             'seaborn': '0.11.2',      # Statistical data visualization
             'scipy': '1.7.1',         # Scientific computing
             'cython': '0.29.0',       # Cython for C++ extensions
+            'pdb2pqr': '3.7.1',       # PDB2PQR tool (pip package)
         }
     
     def _setup_arguments(self):
@@ -210,37 +212,37 @@ class Config:
             # Read the main P2P.csv file
             DATASET_P2P = pd.read_csv(self.FILE_P2P_CSV)
 
-            # Generate dataset-sepcific tables
+            # Generate dataset-specific tables
             # Note: suffix values in CSV are 'V2020', 'wt', 'mt' (lowercase for wt/mt)
-            DATASET_PDBBIND_V2020_PP = DATASET_P2P[DATASET_P2P['suffix'] == 'V2020']
-            DATASET_SKEMPI_V2_WT = DATASET_P2P[DATASET_P2P['suffix'] == 'wt']
-            DATASET_SKEMPI_V2_MT = DATASET_P2P[DATASET_P2P['suffix'] == 'mt']
-            
+            V2020_TABLE = DATASET_P2P[DATASET_P2P['suffix'] == 'V2020']
+            WT_TABLE = DATASET_P2P[DATASET_P2P['suffix'] == 'wt']
+            MT_TABLE = DATASET_P2P[DATASET_P2P['suffix'] == 'mt']
+
             # Debug: Print number of rows found for each dataset
             print(f"\n[INFO] Dataset filtering results:")
-            print(f"  V2020: {len(DATASET_PDBBIND_V2020_PP)} rows")
-            print(f"  WT: {len(DATASET_SKEMPI_V2_WT)} rows")
-            print(f"  MT: {len(DATASET_SKEMPI_V2_MT)} rows")
+            print(f"  V2020: {len(V2020_TABLE)} rows")
+            print(f"  WT: {len(WT_TABLE)} rows")
+            print(f"  MT: {len(MT_TABLE)} rows")
 
             # Store partner1 and partner2 columns as lists for each dataset
-            self.PDBBIND_V2020_PP_partner1 = DATASET_PDBBIND_V2020_PP['partnerA'].tolist()
-            self.PDBBIND_V2020_PP_partner2 = DATASET_PDBBIND_V2020_PP['partnerB'].tolist()
-            self.SKEMPI_V2_WT_partner1 = DATASET_SKEMPI_V2_WT['partnerA'].tolist()
-            self.SKEMPI_V2_WT_partner2 = DATASET_SKEMPI_V2_WT['partnerB'].tolist()
-            self.SKEMPI_V2_MT_partner1 = DATASET_SKEMPI_V2_MT['partnerA'].tolist()
-            self.SKEMPI_V2_MT_partner2 = DATASET_SKEMPI_V2_MT['partnerB'].tolist()
+            self.PDBBIND_V2020_PP_partner1 = V2020_TABLE['partnerA'].tolist()
+            self.PDBBIND_V2020_PP_partner2 = V2020_TABLE['partnerB'].tolist()
+            self.SKEMPI_V2_WT_partner1 = WT_TABLE['partnerA'].tolist()
+            self.SKEMPI_V2_WT_partner2 = WT_TABLE['partnerB'].tolist()
+            self.SKEMPI_V2_MT_partner1 = MT_TABLE['partnerA'].tolist()
+            self.SKEMPI_V2_MT_partner2 = MT_TABLE['partnerB'].tolist()
 
             # Update dataset configuration with tables and directories
             self.DATASET_CONFIG['V2020'].update({
-                'table': DATASET_PDBBIND_V2020_PP,
+                'table': V2020_TABLE,
                 'dir': self.DIR_V2020
             })
             self.DATASET_CONFIG['WT'].update({
-                'table': DATASET_SKEMPI_V2_WT,
+                'table': WT_TABLE,
                 'dir': self.DIR_WT
             })
             self.DATASET_CONFIG['MT'].update({
-                'table': DATASET_SKEMPI_V2_MT,
+                'table': MT_TABLE,
                 'dir': self.DIR_MT
             })
 
@@ -846,10 +848,11 @@ class Config:
         
         # Check dataset directories
         print(f"\n[DATASETS] DATASET DIRECTORIES:")
+        # Use the path attributes defined in _setup_paths (DIR_V2020, DIR_WT, DIR_MT)
         datasets = [
-            ('PDBbind_v2020', self.DIR_PDBBIND_V2020_PP),
-            ('SKEMPI_v2_WT', self.DIR_SKEMPI_V2_WT),
-            ('SKEMPI_v2_MT', self.DIR_SKEMPI_V2_MT)
+            ('PDBbind_v2020', self.DIR_V2020),
+            ('SKEMPI_v2_WT', self.DIR_WT),
+            ('SKEMPI_v2_MT', self.DIR_MT)
         ]
         
         for name, path in datasets:
@@ -1001,7 +1004,7 @@ class Config:
         print(f"\n[SETUP] QUICK SETUP COMMANDS:")
         print(f"   # Create directories")
         print(f"   mkdir -p {self.DIR_DATA} {self.DIR_RESULTS}")
-        print(f"   mkdir -p {self.DIR_PDBBIND_V2020_PP} {self.DIR_SKEMPI_V2_WT} {self.DIR_SKEMPI_V2_MT}")
+        print(f"   mkdir -p {self.DIR_V2020} {self.DIR_WT} {self.DIR_MT}")
         print(f"   mkdir -p {bin_dir}")
         print(f"   ")
         print(f"   # Install Python packages")
@@ -1045,9 +1048,10 @@ DATASET_CONFIG = config.DATASET_CONFIG
 
 # Export table-related attributes (if available)
 TABLE_P2P = getattr(config, 'TABLE_P2P', None)
-TABLE_PDBBIND_V2020_PP = DATASET_CONFIG.get('PDBBIND_V2020_PP', {}).get('table', None)
-TABLE_SKEMPI_V2_WT = DATASET_CONFIG.get('SKEMPI_V2_WT', {}).get('table', None)
-TABLE_SKEMPI_V2_MT = DATASET_CONFIG.get('SKEMPI_V2_MT', {}).get('table', None)
+# TABLE_PDBBIND_V2020_PP is the V2020 dataset table (previously misnamed/mis-keyed)
+TABLE_PDBBIND_V2020_PP = config.DATASET_CONFIG.get('V2020', {}).get('table', None)
+TABLE_SKEMPI_V2_WT = config.DATASET_CONFIG.get('WT', {}).get('table', None)
+TABLE_SKEMPI_V2_MT = config.DATASET_CONFIG.get('MT', {}).get('table', None)
 
 # Export functions
 create_main_parser = config.create_main_parser

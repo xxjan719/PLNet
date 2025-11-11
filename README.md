@@ -6,9 +6,10 @@ This manual is for the code implementation of paper "PLNet: Persistent Laplacian
 ```
 
 **Note:**
-- The project supports three main datasets: PDBbind v2020, SKEMPI v2 wild-type (WT), and SKEMPI v2 mutant (MT)
-- Currently, only the WT dataset has been fully processed with ProFix and is available in `data/WT/`
-- V2020 and MT datasets require additional processing to generate ProFix-processed structures
+- Primary dataset: place `P2P.csv` in the `data/` directory (i.e. `data/P2P.csv`).
+- The repository includes tooling and an optional virtual environment under `env/`; add generated environments and other local artifacts to `.gitignore` so they are not committed.
+- Start by running `src/config.py` — setup and configuration instructions will be printed to the terminal.
+- The `bin/` directory holds external executables (e.g. JACKAL, SCAP, ProFix). You can populate `bin/` yourself following the instructions printed by `src/config.py`, or request prebuilt binaries from xingjianxu@ufl.edu.
 - The system includes comprehensive mutation structure generation capabilities using SCAP
 - All datasets support feature extraction including ESM embeddings, biophysical properties, and pairwise similarity matrices
 

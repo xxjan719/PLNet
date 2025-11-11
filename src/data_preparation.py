@@ -16,8 +16,8 @@ Author: Xingjian Xu
 Email: xingjianxu@ufl.edu
 Institution: University of Florida
 Date Created: 06/01/2024
-Last Modified: 07/01/2025
-Version: 1.0
+Last Modified: 11/01/2025
+Version: 1.2
 """
 import os
 import config

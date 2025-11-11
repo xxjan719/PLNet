@@ -31,6 +31,26 @@ default_cutoff = 16
 AminoA = ['ARG','HIS','LYS','ASP','GLU','SER','THR','ASN','GLN','CYS',
           'SEF','GLY','PRO','ALA','VAL','ILE','LEU','MET','PHE','TYR',
           'TRP']
+
+AMINO_ACIDS = ['ARG', 'HIS', 'LYS', 'ASP', 'GLU', 'SER', 'THR', 'ASN', 'GLN', 'CYS',
+               'SEF', 'GLY', 'PRO', 'ALA', 'VAL', 'ILE', 'LEU', 'MET', 'PHE', 'TYR', 'TRP']
+
+
+# Non-canonical amino acid mappings
+NON_CANONICAL_AA = {
+    'LLP': 'LYS', 'M3P': 'LYS', 'MSE': 'MET', 'F2F': 'PHE', 'CGU': 'GLU',
+    'MYL': 'LYS', 'TPO': 'THR', 'HSE': 'HIS'
+}
+
+
+AminoA_index = {
+    'ARG': 2, 'HIS': 2, 'LYS': 2, 'ASP': 3, 'GLU': 3,
+    'SER': 1, 'THR': 1, 'ASN': 1, 'GLN': 1, 'CYS': 4,
+    'SEF': 4, 'GLY': 4, 'PRO': 4, 'ALA': 0, 'VAL': 0,
+    'ILE': 0, 'LEU': 0, 'MET': 0, 'PHE': 0, 'TYR': 0,
+    'TRP': 0
+}
+
 AminoA_mapping = {
     'ARG': 'R', 'HIS': 'H', 'LYS': 'K', 'ASP': 'D', 'GLU': 'E',
     'SER': 'S', 'THR': 'T', 'ASN': 'N', 'GLN': 'Q', 'CYS': 'C',
@@ -43,18 +63,29 @@ NC_AminoA = {'LLP':'LYS','M3P':'LYS','MSE':'MET','F2F':'PHE','CGU':'GLU',
 
 AALength = len(AminoA)
 
-def three_to_one(three_letter_code):
-    # Normalize the input to uppercase to handle varying input cases
-    three_letter_code = three_letter_code.upper()
+# def three_to_one(three_letter_code):
+#     # Normalize the input to uppercase to handle varying input cases
+#     three_letter_code = three_letter_code.upper()
     
-    # Check if it is a non-canonical amino acid
-    if three_letter_code in NC_AminoA:
-        three_letter_code = NC_AminoA[three_letter_code]
+#     # Check if it is a non-canonical amino acid
+#     if three_letter_code in NC_AminoA:
+#         three_letter_code = NC_AminoA[three_letter_code]
 
-    # Convert the canonical three-letter code to a one-letter code
-    one_letter_code = AminoA_mapping.get(three_letter_code, '?')  # '?' is a placeholder for unknown codes
+#     # Convert the canonical three-letter code to a one-letter code
+#     one_letter_code = AminoA_mapping.get(three_letter_code, '?')  # '?' is a placeholder for unknown codes
 
-    return one_letter_code
+#     return one_letter_code
+
+# Fallback: define our own amino acid conversion dictionaries
+three_to_one = {
+        'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C',
+        'GLN': 'Q', 'GLU': 'E', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
+        'LEU': 'L', 'LYS': 'K', 'MET': 'M', 'PHE': 'F', 'PRO': 'P',
+        'SER': 'S', 'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V',
+        'SEF': 'S'  # Non-canonical serine
+}
+    
+one_to_three = {v: k for k, v in three_to_one.items()}
 
 ElementList = ['C','N','O']
 EleLength = len(ElementList)

@@ -10,6 +10,11 @@ Dependencies:
 - ProFix: Protein structure fixing tool (must be installed in system PATH)
 - pdb2pqr: For generating PQR files with charge assignments (must be installed in system PATH)
 - Biopython: For PDB file handling
+
+Author: Jiahui Chen, Xingjian Xu
+Email: 06/04/2024
+LastEditTime: 11/10/2025
+
 """
 
 import os
@@ -17,46 +22,38 @@ import re
 import sys
 import warnings
 import subprocess
+import shutil
+import glob
 from typing import Tuple, Optional, List, Dict
 from Bio.PDB import PDBParser, PDBIO
 
-# Try to import amino acid conversion functions, with fallback
-try:
-    from Bio.PDB.Polypeptide import three_to_one, one_to_three
-except ImportError:
-    # Fallback: define our own amino acid conversion dictionaries
-    three_to_one = {
-        'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C',
-        'GLN': 'Q', 'GLU': 'E', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
-        'LEU': 'L', 'LYS': 'K', 'MET': 'M', 'PHE': 'F', 'PRO': 'P',
-        'SER': 'S', 'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V',
-        'SEF': 'S'  # Non-canonical serine
-    }
-    
-    one_to_three = {v: k for k, v in three_to_one.items()}
-
-# Import from constant module
-# Amino acid definitions
-AMINO_ACIDS = ['ARG', 'HIS', 'LYS', 'ASP', 'GLU', 'SER', 'THR', 'ASN', 'GLN', 'CYS',
-               'SEF', 'GLY', 'PRO', 'ALA', 'VAL', 'ILE', 'LEU', 'MET', 'PHE', 'TYR', 'TRP']
-
-# Non-canonical amino acid mappings
-NON_CANONICAL_AA = {
-    'LLP': 'LYS', 'M3P': 'LYS', 'MSE': 'MET', 'F2F': 'PHE', 'CGU': 'GLU',
-    'MYL': 'LYS', 'TPO': 'THR', 'HSE': 'HIS'
-}
-
-default_cutoff = 16.0
-
-AminoA_index = {
-    'ARG': 2, 'HIS': 2, 'LYS': 2, 'ASP': 3, 'GLU': 3,
-    'SER': 1, 'THR': 1, 'ASN': 1, 'GLN': 1, 'CYS': 4,
-    'SEF': 4, 'GLY': 4, 'PRO': 4, 'ALA': 0, 'VAL': 0,
-    'ILE': 0, 'LEU': 0, 'MET': 0, 'PHE': 0, 'TYR': 0,
-    'TRP': 0
-}
 
 warnings.filterwarnings('ignore')
+# Try to import amino acid conversion functions, with fallback
+try:
+    from .constant import default_cutoff, AMINO_ACIDS, NON_CANONICAL_AA, AminoA_index
+    from Bio.PDB.Polypeptide import three_to_one, one_to_three
+except:
+    # When this module is executed as a script (not as a package) the relative import fails.
+    # Add the parent 'src' directory to sys.path so absolute imports work when running the file directly.
+    try:
+        src_parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if src_parent not in sys.path:
+            sys.path.insert(0, src_parent)
+    except Exception:
+        pass
+    from p2p_bio.constant import three_to_one, one_to_three, default_cutoff, AMINO_ACIDS, NON_CANONICAL_AA, AminoA_index
+    
+# Ensure `three_to_one` is a callable function. Some modules provide a dict instead of a function.
+try:
+    if isinstance(three_to_one, dict):
+        _three_map = three_to_one
+        def three_to_one(code: str) -> str:
+            if not code:
+                return '?'
+            return _three_map.get(code.upper(), _three_map.get(code, '?'))
+except NameError:
+    pass
 
 
 def parse_mutation_string(mutation_string: str) -> Dict[str, str]:
@@ -143,20 +140,62 @@ class MutationStructureGenerator:
     
     def _validate_dependencies(self) -> None:
         """Validate that required external tools (SCAP, ProFix, pdb2pqr) are available."""
+        # Helper to find executable in PATH or project/bin
+        def find_executable(cmd_name: str) -> Optional[str]:
+            # 1) system PATH
+            path = shutil.which(cmd_name)
+            if path:
+                return path
+            # 2) project bin directory (src/../bin)
+            try:
+                # Compute repository root (three levels up from this file: src/p2p_bio -> src -> repo)
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                candidate = os.path.join(project_root, 'bin', cmd_name)
+                if os.path.exists(candidate) and os.access(candidate, os.X_OK):
+                    return candidate
+            except Exception:
+                pass
+            return None
+
+        # Find SCAP
+        scap_path = find_executable('scap')
+        if not scap_path:
+            raise RuntimeError("SCAP not found in system PATH or project 'bin/'. Please install SCAP or place its executable in the project's bin/ directory.")
+        self.scap_path = scap_path
+
+        # Find ProFix
+        profix_path = find_executable('profix')
+        if not profix_path:
+            raise RuntimeError("ProFix not found in system PATH or project 'bin/'. Please install ProFix or place its executable in the project's bin/ directory.")
+        self.profix_path = profix_path
+
+        # Find pdb2pqr (may be installed via pip/conda)
+        pdb2pqr_path = find_executable('pdb2pqr')
+        if not pdb2pqr_path:
+            raise RuntimeError("pdb2pqr not found in system PATH or project 'bin/'. Please install pdb2pqr.")
+        self.pdb2pqr_path = pdb2pqr_path
+        # Try to read jackal.dir from project bin to set JACKALDIR for SCAP if available
         try:
-            subprocess.run(['scap', '--help'], capture_output=True, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            raise RuntimeError("SCAP not found in system PATH. Please install SCAP.")
-        
-        try:
-            subprocess.run(['profix', '--help'], capture_output=True, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            raise RuntimeError("ProFix not found in system PATH. Please install ProFix.")
-        
-        try:
-            subprocess.run(['pdb2pqr', '--help'], capture_output=True, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            raise RuntimeError("pdb2pqr not found in system PATH. Please install pdb2pqr.")
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            jackal_dir_file = os.path.join(project_root, 'bin', 'jackal.dir')
+            if os.path.exists(jackal_dir_file):
+                with open(jackal_dir_file, 'r') as f:
+                    jackal_path = f.read().strip()
+                if jackal_path:
+                    # If jackal.dir points to a subfolder like .../library, use its parent
+                    jp = jackal_path
+                    try:
+                        if jp.endswith(os.sep + 'library') or jp.endswith('/library'):
+                            jp = os.path.dirname(jp)
+                    except Exception:
+                        pass
+                    self.jackal_dir = jp
+                else:
+                    self.jackal_dir = None
+            else:
+                self.jackal_dir = None
+        except Exception:
+            self.jackal_dir = None
     
     def _parse_residue_id(self, res_id: str) -> Tuple[str, int, str]:
         """
@@ -197,12 +236,12 @@ class MutationStructureGenerator:
         try:
             if not os.path.exists(pqr_file_path):
                 subprocess.run([
-                    'pdb2pqr', 
-                    '--ff=amber', 
-                    '--ph-calc-method=propka', 
-                    '--chain', 
-                    '--with-ph=7.0', 
-                    pdb_file_path, 
+                    self.pdb2pqr_path,
+                    '--ff=amber',
+                    '--ph-calc-method=propka',
+                    '--chain',
+                    '--with-ph=7.0',
+                    pdb_file_path,
                     pqr_file_path
                 ], check=True, capture_output=True)
         except subprocess.CalledProcessError as e:
@@ -281,43 +320,114 @@ class MutationStructureGenerator:
         
         return new_res_id, None
     
-    def _run_profix_scap(self, base_filename: str, mutation_chain: str, 
-                        residue_id: int, mutation_residue: str) -> None:
+    def _run_profix_scap(self, wt_pdb_path: str, mutation_chain: str,
+                        residue_id: int, mutation_residue: str,
+                        desired_output_name: Optional[str] = None) -> str:
         """
         Run ProFix and SCAP to generate mutant structure.
-        
-        Args:
-            base_filename: Base filename for the structure
-            mutation_chain: Chain ID where mutation occurs
-            residue_id: Residue ID where mutation occurs
-            mutation_residue: New residue type (one-letter code)
+
+        Operates in the directory containing the input WT PDB so that
+        temporary files (e.g. tmp_scap.list) and outputs live alongside
+        the original PDB (for example, data/Example).
+
+        Returns the path to the generated mutant PDB.
         """
-        # Run ProFix to fix the structure
-        profix_cmd = f"profix -fix 0 {base_filename}_WT.pdb"
-        result = subprocess.run(profix_cmd.split(), capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"ProFix failed: {result.stderr}")
-        
-        # Rename fixed file
-        os.rename(f"{base_filename}_WT_fix.pdb", f"{base_filename}_WT.pdb")
-        
-        # Create SCAP input file
-        scap_input = f"{mutation_chain},{residue_id},{mutation_residue}"
-        with open("tmp_scap.list", "w") as f:
-            f.write(scap_input)
-        
-        # Run SCAP to generate mutation
-        scap_cmd = f"scap -ini 20 -min 4 {base_filename}_WT.pdb tmp_scap.list"
-        result = subprocess.run(scap_cmd.split(), capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"SCAP failed: {result.stderr}")
-        
-        # Rename output file
-        os.rename(f"{base_filename}_WT_scap.pdb", f"{base_filename}_MT.pdb")
-        
-        # Clean up temporary file
-        if os.path.exists("tmp_scap.list"):
-            os.remove("tmp_scap.list")
+        wt_pdb_path = os.path.abspath(wt_pdb_path)
+        wt_dir = os.path.dirname(wt_pdb_path) or os.getcwd()
+        base = os.path.splitext(os.path.basename(wt_pdb_path))[0]
+
+        # Ensure we operate in the WT directory so SCAP output and tmp files end up there
+        cwd = os.getcwd()
+        try:
+            os.chdir(wt_dir)
+
+            # Run ProFix on the WT pdb file (may modify in-place or produce variant names)
+            profix_cmd = [self.profix_path, '-fix', '0', wt_pdb_path]
+            result = subprocess.run(profix_cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"ProFix failed: {result.stderr}\ncmd: {' '.join(profix_cmd)}")
+
+            # Candidate fixed filenames
+            candidates = [
+                f"{base}_WT_fix.pdb",
+                f"{base}_fix.pdb",
+                f"{base}_WT_fix.PDB",
+                f"{base}_fix.PDB",
+                os.path.basename(wt_pdb_path),
+            ]
+
+            fixed_path = None
+            for cand in candidates:
+                if os.path.exists(cand):
+                    fixed_path = os.path.abspath(cand)
+                    break
+
+            if fixed_path is None:
+                raise RuntimeError(f"ProFix did not produce expected fixed file. Candidates checked: {candidates}. Dir listing: {os.listdir(wt_dir)}")
+
+            # Create SCAP input file next to WT
+            scap_list = os.path.join(wt_dir, 'tmp_scap.list')
+            with open(scap_list, 'w') as f:
+                f.write(f"{mutation_chain},{residue_id},{mutation_residue}\n")
+
+            # Run SCAP; pass JACKALDIR if available
+            scap_cmd = [self.scap_path, '-ini', '20', '-min', '4', fixed_path, scap_list]
+            env = os.environ.copy()
+            if hasattr(self, 'jackal_dir') and self.jackal_dir:
+                env['JACKALDIR'] = self.jackal_dir
+
+            result = subprocess.run(scap_cmd, capture_output=True, text=True, env=env)
+            if result.returncode != 0:
+                raise RuntimeError(f"SCAP failed: {result.stderr}\nstdout: {result.stdout}\ncmd: {' '.join(scap_cmd)}")
+
+            # Find SCAP output in WT directory
+            patterns = [
+                f"{base}*_scap*.pdb",
+                f"{base}*_SCAP*.pdb",
+                f"{base}*_WT_scap*.pdb",
+                f"{base}_WT_scap.pdb",
+                f"{base}_scap.pdb",
+                f"{base}_MT.pdb",
+                f"{base}*_MT*.pdb",
+                f"{base}*scap*.pdb",
+            ]
+
+            scap_candidates = []
+            for pat in patterns:
+                scap_candidates.extend(glob.glob(pat))
+
+            # remove duplicates preserving order
+            seen = set(); scap_candidates = [x for x in scap_candidates if not (x in seen or seen.add(x))]
+
+            if not scap_candidates:
+                raise RuntimeError(f"SCAP produced no expected outputs in {wt_dir}. Dir listing: {os.listdir(wt_dir)}\nSCAP stdout: {result.stdout!r}\nSCAP stderr: {result.stderr!r}")
+
+            # Choose first candidate and rename to desired final name.
+            src = os.path.abspath(scap_candidates[0])
+            if desired_output_name:
+                # strip any extension
+                desired_base = os.path.splitext(os.path.basename(desired_output_name))[0]
+                final_mt = os.path.join(wt_dir, f"{desired_base}.pdb")
+            else:
+                final_mt = os.path.join(wt_dir, f"{base}_MT.pdb")
+
+            if os.path.abspath(src) != os.path.abspath(final_mt):
+                try:
+                    os.replace(src, final_mt)
+                except Exception as e:
+                    raise RuntimeError(f"Failed to move SCAP output {src} -> {final_mt}: {e}")
+
+            # cleanup tmp list
+            try:
+                if os.path.exists(scap_list):
+                    os.remove(scap_list)
+            except Exception:
+                pass
+
+            return final_mt
+
+        finally:
+            os.chdir(cwd)
     
     def generate_mutation_from_string(self, 
                                     mutation_string: str,
@@ -342,6 +452,21 @@ class MutationStructureGenerator:
         """
         # Parse mutation string
         mutation_info = parse_mutation_string(mutation_string)
+        # If user provided a directory as wt_pdb_path, try to locate a PDB file inside.
+        if os.path.isdir(wt_pdb_path):
+            # Prefer a file named by the PDB ID (e.g., 1A22.pdb)
+            pdb_id = mutation_info.get('pdb_id')
+            candidate = os.path.join(wt_pdb_path, f"{pdb_id}.pdb") if pdb_id else None
+            if candidate and os.path.isfile(candidate):
+                wt_pdb_path = candidate
+            else:
+                # fallback: find the first .pdb file in the directory
+                files = [f for f in os.listdir(wt_pdb_path) if f.lower().endswith('.pdb')]
+                if len(files) == 0:
+                    raise ValueError(f"No PDB file found in directory: {wt_pdb_path}. Please provide a path to a PDB file.")
+                if len(files) > 1:
+                    print(f"[WARNING] Multiple PDB files found in {wt_pdb_path}; using {files[0]}")
+                wt_pdb_path = os.path.join(wt_pdb_path, files[0])
         
         # Validate that wild residue matches what's expected
         if mutation_info['wild_residue'] != mutation_info['wild_residue']:
@@ -426,28 +551,39 @@ class MutationStructureGenerator:
         if new_res_id is None:
             raise ValueError(f"Mutation residue {mutation_residue_id} not found in chain {mutation_chain}")
         
-        # Save wild-type structure
-        wt_output_path = f"{output_base_name}_WT.pdb"
+        # Save wild-type structure next to the input WT PDB (don't force a '_WT' suffix)
+        wt_dir = os.path.dirname(os.path.abspath(wt_pdb_path)) or os.getcwd()
+        base_name = os.path.splitext(os.path.basename(wt_pdb_path))[0]
+        wt_output_path = os.path.join(wt_dir, f"{base_name}.pdb")
         io = PDBIO()
         io.set_structure(structure)
         io.save(wt_output_path)
-        
-        # Generate mutation using ProFix and SCAP
-        self._run_profix_scap(output_base_name, mutation_chain, new_res_id, mutation_residue)
-        
-        # Return path to mutant structure
-        mt_output_path = f"{output_base_name}_MT.pdb"
+
+        # Generate mutation using ProFix and SCAP (operate in WT directory)
+        # Use the provided output_base_name (if it's a simple name like '1A22_A_M_14_A')
+        desired_name = None
+        try:
+            # prefer output_base_name if it's simple (no path)
+            desired_name = os.path.basename(output_base_name)
+        except Exception:
+            desired_name = None
+
+        mt_output_path = self._run_profix_scap(wt_output_path, mutation_chain, new_res_id, mutation_residue, desired_output_name=desired_name)
+
+        # Verify mutant produced
         if not os.path.exists(mt_output_path):
             raise RuntimeError("Failed to generate mutant structure file")
         
         # Generate PQR files for both wild-type and mutant structures
         try:
-            # Generate PQR for wild-type structure
-            wt_pqr_path = self._generate_pqr_files(wt_output_path, f"{output_base_name}_WT")
+            # Generate PQR for wild-type structure (place in same directory as WT)
+            out_base_wt = os.path.join(wt_dir, f"{output_base_name}")
+            wt_pqr_path = self._generate_pqr_files(wt_output_path, out_base_wt)
             print(f"Generated wild-type PQR file: {wt_pqr_path}")
-            
+
             # Generate PQR for mutant structure
-            mt_pqr_path = self._generate_pqr_files(mt_output_path, f"{output_base_name}_MT")
+            out_base_mt = os.path.join(wt_dir, f"{output_base_name}")
+            mt_pqr_path = self._generate_pqr_files(mt_output_path, out_base_mt)
             print(f"Generated mutant PQR file: {mt_pqr_path}")
             
         except Exception as e:
@@ -611,3 +747,21 @@ def generate_mutation_structure(wt_pdb_path: str,
         mutation_residue=mutation_residue,
         target_chains=target_chains
     ) 
+if __name__ == "__main__":
+    # Example usage
+    MT_path = "../../data/Example"
+    # Only run the example if the provided WT PDB path exists.
+    if not os.path.exists(MT_path):
+        print(f"[INFO] Example WT path not found ({MT_path}). Skipping example run in __main__. Provide a valid PDB path to run the example.")
+    else:
+        generator = MutationStructureGenerator(MT_path)
+        mutation_string = "1A22_A_M_14_A"
+        target_chain = mutation_string[5]
+        output_base_name = "1A22_A_M14_A"
+        output_path = generator.generate_mutation_from_string(
+            mutation_string,
+            MT_path,
+            output_base_name,
+            target_chain
+        )
+        print(f"[INFO] Generated mutant structure at: {output_path}")
