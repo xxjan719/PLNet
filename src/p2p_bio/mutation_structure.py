@@ -237,9 +237,9 @@ class MutationStructureGenerator:
             if not os.path.exists(pqr_file_path):
                 subprocess.run([
                     self.pdb2pqr_path,
-                    '--ff=amber',
-                    '--ph-calc-method=propka',
-                    '--chain',
+                    '--ff=AMBER',
+                    '--titration-state-method=propka',
+                    '--keep-chain',
                     '--with-ph=7.0',
                     pdb_file_path,
                     pqr_file_path
@@ -296,28 +296,51 @@ class MutationStructureGenerator:
             Tuple of (new residue ID, None)
         """
         new_res_id = None
-        
+
+        # We'll build a mapping from original (number,insertion) -> new sequential id
         for chain_id in target_chains:
             if chain_id in structure[0]:
-                # First pass: mark old residues
+                # Collect original residue identity information in order
+                original_info = []
                 for residue in structure[0][chain_id]:
+                    # residue.id is typically a tuple like (' ', seq_number, insertion)
+                    try:
+                        _flag, orig_num, orig_ins = residue.id
+                    except Exception:
+                        # Fallback: try to coerce
+                        _flag = residue.id[0] if len(residue.id) > 0 else ' '
+                        orig_num = residue.id[1] if len(residue.id) > 1 else None
+                        orig_ins = residue.id[2] if len(residue.id) > 2 else ' '
+                    original_info.append((orig_num, orig_ins))
+
+                # Now renumber sequentially and find which new index corresponds to the original mutation id
+                for idx, residue in enumerate(list(structure[0][chain_id])):
                     residue_id_list = list(residue.id)
-                    residue_id_list[0] = 'Old'
-                    residue.id = tuple(residue_id_list)
-                
-                # Second pass: renumber sequentially
-                for idx, residue in enumerate(structure[0][chain_id]):
-                    residue_id_list = list(residue.id)
+                    # assign new sequential numbering and clear insertion code
                     residue_id_list[0] = ' '
                     residue_id_list[1] = idx + 1
                     residue_id_list[2] = ' '
                     residue.id = tuple(residue_id_list)
-                    
-                    # Track mutation residue
-                    if (chain_id == mutation_chain and 
-                        residue_id_list[1] == mutation_res_id[1]):
-                        new_res_id = idx + 1
-        
+
+                    # Compare against original info captured earlier
+                    try:
+                        orig_num, orig_ins = original_info[idx]
+                    except Exception:
+                        orig_num, orig_ins = None, ' '
+
+                    # mutation_res_id is a tuple (hetero_flag, number, insertion)
+                    try:
+                        mut_num = mutation_res_id[1]
+                        mut_ins = mutation_res_id[2]
+                    except Exception:
+                        mut_num = mutation_res_id
+                        mut_ins = ' '
+
+                    # Match by original residue number and insertion code (if provided)
+                    if chain_id == mutation_chain and orig_num is not None:
+                        if orig_num == mut_num and (mut_ins == ' ' or str(orig_ins) == str(mut_ins)):
+                            new_res_id = idx + 1
+
         return new_res_id, None
     
     def _run_profix_scap(self, wt_pdb_path: str, mutation_chain: str,

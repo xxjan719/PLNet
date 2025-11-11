@@ -6,6 +6,10 @@ from tqdm import tqdm
 import shutil
 import subprocess
 from datetime import datetime
+try:
+    from .mutation_structure import MutationStructureGenerator
+except:
+    from p2p_bio.mutation_structure import MutationStructureGenerator
 
 def download_pdb(pdb_id, save_path):
     """
@@ -88,50 +92,78 @@ def check_profix_PDB_completeness(dataset_dir, table, dataset_name):
 
 def process_missing_PDB_files(dataset_dir, missing_files, dataset_name):
     """Download PDB files for a dataset."""
-    print(f"\nProcessing missing files for {dataset_name} dataset...")
+    print(f"\n[INFO] Processing missing files for {dataset_name} dataset...")
     
-    # Determine dataset type and PDB ID handling
-    if dataset_name == 'SKEMPI_V2_MT':
-        # For SKEMPI_V2_MT, extract first 4 characters as PDB ID
-        print("[INFO] SKEMPI_V2_MT dataset detected - extracting PDB IDs from mutation format")
-        pdb_id_mapping = {}
-        for mutation_id in sorted(missing_files):
-            # Extract first 4 characters as PDB ID (e.g., "1OGA" from "1OGA_A_A_69_G")
-            pdb_id = mutation_id[:4]
-            pdb_id_mapping[mutation_id] = pdb_id
-    else:
-        # For PDBBIND_V2020_PP and SKEMPI_V2_WT, use PDB ID directly
-        pdb_id_mapping = {pdb_id: pdb_id for pdb_id in missing_files}
-    
-     # Download PDB files
-    for original_id, pdb_id in pdb_id_mapping.items():
+    # Process each missing identifier. For mutation-format IDs (SKEMPI MT)
+    # the PDB ID is usually the first 4 characters (e.g. '1A22' from '1A22_A_M_14_A').
+    for original_id in sorted(missing_files):
+        # Decide PDB id: if the id looks like a mutation string (contains '_')
+        # use the first 4 characters; otherwise use the id directly.
+        if dataset_name == 'SKEMPI_V2_MT' or ('_' in original_id and len(original_id) > 4):
+            pdb_id = original_id[:4]
+        else:
+            pdb_id = original_id
+
         # Create directory structure: dataset_dir/original_id/pdb_id.pdb
         pdb_folder = os.path.join(dataset_dir, original_id)
         os.makedirs(pdb_folder, exist_ok=True)
+
+        # Copy project-level jackal.dir into each pdb folder if it exists.
+        # This helps ProFix/SCAP find JACKAL resources when they run in the
+        # working PDB directory.
+        try:
+            project_root = Path(__file__).resolve().parent.parent.parent
+            bin_dir = project_root / "bin"
+            jackal_dir_source = bin_dir / "jackal.dir"
+            jackal_dir_dest = Path(pdb_folder) / "jackal.dir"
+            if jackal_dir_source.exists():
+                try:
+                    shutil.copy2(str(jackal_dir_source), str(jackal_dir_dest))
+                    print(f"[INFO] Copied jackal.dir to working directory: {jackal_dir_dest}")
+                except Exception as e:
+                    print(f"[WARNING] Failed to copy jackal.dir to {pdb_folder}: {e}")
+            else:
+                # It's fine if there's no jackal.dir in project bin; warn once per file
+                print(f"[DEBUG] No jackal.dir found at {jackal_dir_source}; skipping copy for {pdb_folder}")
+        except Exception as e:
+            print(f"[WARNING] Error while attempting to copy jackal.dir: {e}")
         pdb_file = os.path.join(pdb_folder, f'{pdb_id}.pdb')
-        
+
         print(f"\nProcessing {original_id} (PDB ID: {pdb_id})...")
-        
-        # Check if PDB file already exists
-        if os.path.exists(pdb_file):
+
+        # First, ensure we have the WT PDB file available (attempt to download if missing)
+        if os.path.exists(pdb_file) and os.path.getsize(pdb_file) > 0:
             print(f"[SUCCESS] PDB file for {pdb_id} already exists at {pdb_file}")
-            
-            # Check if file is not empty and readable
-            if os.path.getsize(pdb_file) == 0:
-                print(f"[WARNING] {pdb_file} is empty. Attempting to redownload...")
-                download_success = download_pdb(pdb_id, pdb_file)
-                if not download_success:
-                    print(f"[ERROR] Failed to download {pdb_id}")
-                    continue
         else:
             print(f"Downloading PDB file for {pdb_id}...")
             download_success = download_pdb(pdb_id, pdb_file)
             if not download_success:
-                print(f"[ERROR] Failed to download {pdb_id}")
+                print(f"[ERROR] Failed to download {pdb_id}. Skipping {original_id}.")
                 continue
-            
             print(f"[SUCCESS] Downloaded {pdb_id}.pdb to {pdb_file}")
-    
+
+        # If this is a mutation-type record, generate the mutant structure
+        if dataset_name == 'SKEMPI_V2_MT' or ('_' in original_id and len(original_id) > 4):
+            print(f"[INFO] Processing mutation structure for {original_id}...")
+            try:
+                generator = MutationStructureGenerator(pdb_folder)
+                mutation_string = original_id
+                output_base_name = original_id
+                # chain is typically the character after the first underscore
+                # e.g. 1A22_A_M_14_A -> chain at index 5
+                target_chain = mutation_string.split('_')[1] if '_' in mutation_string else mutation_string[5]
+                output_path = generator.generate_mutation_from_string(
+                    mutation_string,
+                    pdb_folder,
+                    output_base_name,
+                    target_chain
+                )
+                print(f"[SUCCESS] Generated mutation structure at {output_path}")
+            except Exception as e:
+                print(f"[ERROR] Mutation generation failed for {original_id}: {e}")
+
+
+
     print(f"\n[SUCCESS] Completed PDB file downloads for {dataset_name} dataset")
 
 

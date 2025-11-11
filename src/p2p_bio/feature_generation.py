@@ -222,10 +222,10 @@ class protein_complex:
         pqr_file_partner2 = os.path.join(self.filepath, self.PDBID+'_'+self.partner2+'.pqr')
         try:
             if not os.path.exists(pqr_file_partner1):
-                os.system(f'pdb2pqr --ff=amber --ph-calc-method=propka --chain --with-ph=7.0 {pdb_file_partner1} {pqr_file_partner1}')
+                os.system(f'pdb2pqr --ff=AMBER --titration-state-method=propka --keep-chain --with-ph=7.0 {pdb_file_partner1} {pqr_file_partner1}')
             if not os.path.exists(pqr_file_partner2):
-                os.system(f'pdb2pqr --ff=amber --ph-calc-method=propka --chain --with-ph=7.0 {pdb_file_partner2} {pqr_file_partner2}')
-        except:
+                os.system(f'pdb2pqr --ff=AMBER --titration-state-method=propka --keep-chain --with-ph=7.0 {pdb_file_partner2} {pqr_file_partner2}')
+        except Exception:
             exit('pdb2pqr is not installed, please install it first')
 
         pass
