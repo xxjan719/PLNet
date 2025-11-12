@@ -9,7 +9,7 @@ Comments:
 import os, sys
 import warnings
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional
 from Bio.PDB.PDBParser import PDBParser
 from Bio.PDB.Structure import Structure
 from Bio.PDB.PDBIO import PDBIO
@@ -23,6 +23,16 @@ try:
 except:
     from constant import default_cutoff, ElementList, EleLength, AminoA, AALength, NC_AminoA, AminoA_index
     from constant import pKa_index, pKa_group, atmtyp_to_ele, three_to_one, ele2index
+
+# Import config flag for mibpb features
+try:
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from config import ENABLE_MIBPB_FEATURES
+except:
+    # Fallback: assume enabled if config not available
+    ENABLE_MIBPB_FEATURES = True
 
 class my_atom:
     def __init__(self, position=None, chain=None, resID=None, atype=None, 
@@ -197,7 +207,12 @@ class parser_pqr:
         pKa_features.extend(detail_Net)
         return np.array(pKa_features)
 
-    def get_feature_electrostatics(self, h: float = 0.5) -> np.ndarray:
+    def get_feature_electrostatics(self, h: float = 0.5) -> Optional[np.ndarray]:
+        # Check if mibpb features are enabled
+        if not ENABLE_MIBPB_FEATURES:
+            print('[INFO] MIBPB features disabled - returning None for electrostatics features')
+            # Return None when MIBPB features are disabled
+            return None
 
         print('run MIBPB >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>')
         if not os.path.exists(self.file_name+'.englist') or not os.path.exists(self.file_name+'.eng') or \

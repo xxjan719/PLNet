@@ -467,7 +467,12 @@ class protein_complex:
         feature_pKa = pqr_structure.get_feature_pKa()
         feature_electrostatic = pqr_structure.get_feature_electrostatics()
 
-        return np.concatenate((feature_global, feature_pKa, feature_electrostatic), axis=0, dtype=np.float32)
+        # Handle None electrostatics features (when MIBPB is disabled)
+        if feature_electrostatic is None:
+            # Return only global and pKa features when electrostatics are disabled
+            return np.concatenate((feature_global, feature_pKa), axis=0, dtype=np.float32)
+        else:
+            return np.concatenate((feature_global, feature_pKa, feature_electrostatic), axis=0, dtype=np.float32)
 
     def persistent_homology_features(self) -> Tuple[np.ndarray, np.ndarray]:
 

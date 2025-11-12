@@ -180,7 +180,24 @@ class MutationStructureGenerator:
             jackal_dir_file = os.path.join(project_root, 'bin', 'jackal.dir')
             if os.path.exists(jackal_dir_file):
                 with open(jackal_dir_file, 'r') as f:
-                    jackal_path = f.read().strip()
+                    content = f.read().strip()
+                
+                # Parse jackal.dir format: can be either a simple path or formatted as:
+                # pdb: .
+                # library: /path/to/library
+                # key: KEY
+                jackal_path = None
+                if 'library:' in content:
+                    # Parse formatted version
+                    for line in content.split('\n'):
+                        line = line.strip()
+                        if line.startswith('library:'):
+                            jackal_path = line.split('library:', 1)[1].strip()
+                            break
+                else:
+                    # Simple path format (backward compatibility)
+                    jackal_path = content
+                
                 if jackal_path:
                     # If jackal.dir points to a subfolder like .../library, use its parent
                     jp = jackal_path

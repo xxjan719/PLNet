@@ -1,7 +1,7 @@
 import os
 import sys
+import csv
 import numpy as np
-import pandas as pd
 from datetime import datetime
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error, mean_absolute_error
@@ -45,9 +45,12 @@ scaler = StandardScaler()
 PLOT_OPEN = False
 for params in param_combination:
     DATASET_SELECTION = DATASET_INPUT
-    TABLE = pd.read_csv(os.path.join(DIR_DATA, 'P2P.csv'))
-    wt = TABLE[TABLE['source'] == 'Skempi_WT']
-    ID_train = wt['ID'].values.flatten()
+    # Read CSV file using Python's built-in csv module
+    csv_path = os.path.join(DIR_DATA, 'P2P.csv')
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        wt_ids = [row['ID'] for row in reader if row.get('source') == 'Skempi_WT']
+    ID_train = np.array(wt_ids)
     print(f'ID_train shape: {ID_train.shape}')
     input_dataset_V2020,target_label_V2020,ID_V2020 = load_training_features(
             method=METHOD_INPUT,  # Just pass the string directly
@@ -166,15 +169,17 @@ for params in param_combination:
                 error_log.write(f"Error: {str(e)}\n")
     elif DATASET_SELECTION == 'MT':
         print('Processing data and starting cross-validation...')
-        ID_series = pd.Series(ID_train)
         feature_all_scaled = scaler.fit_transform(input_dataset)
         y = target_label
         for fold, (train_index, test_index) in enumerate(kf.split(ID_train)):
             ID_train_train, ID_train_test = ID_train[train_index], ID_train[test_index]
-            index_train = [ID_series[ID_series.str.startswith(ID_part)].index.tolist() for ID_part in ID_train_train]
+            # Replace pandas Series.str.startswith() with list comprehension
+            index_train = [[i for i, id_val in enumerate(ID_train) if str(id_val).startswith(str(ID_part))] 
+                           for ID_part in ID_train_train]
             index_train = [item for sublist in index_train for item in sublist]  # Flatten the list
 
-            index_test = [ID_series[ID_series.str.startswith(ID_part)].index.tolist() for ID_part in ID_train_test]
+            index_test = [[i for i, id_val in enumerate(ID_train) if str(id_val).startswith(str(ID_part))] 
+                         for ID_part in ID_train_test]
             index_test = [item for sublist in index_test for item in sublist]  # Flatten the list
 
             # Create training and testing sets
@@ -215,7 +220,6 @@ for params in param_combination:
     elif DATASET_SELECTION == 'P2P':
         X = np.concatenate([input_dataset_V2020, input_dataset_MT, input_dataset_WT], axis=0)
         y = np.concatenate([target_label_V2020, target_label_MT, target_label_WT], axis=0)
-        ID_series = pd.Series(ID_train)
         X_scaled = scaler.fit_transform(X)
         X_v2020_scaled = X_scaled[:len(input_dataset_V2020)]
         X_mt_scaled = X_scaled[len(input_dataset_V2020):len(input_dataset_V2020) + len(input_dataset_MT)]
@@ -238,19 +242,24 @@ for params in param_combination:
             test_ids = mt_folds[fold]
             train_ids = np.concatenate([mt_folds[i] for i in range(10) if i != fold])
             
-            index_train_mt = [ID_series[ID_series.str.startswith(ID_part)].index.tolist() for ID_part in train_ids]
+            # Replace pandas Series.str.startswith() with list comprehension
+            index_train_mt = [[i for i, id_val in enumerate(ID_train) if str(id_val).startswith(str(ID_part))] 
+                              for ID_part in train_ids]
             index_train_mt = [item for sublist in index_train_mt for item in sublist]  # Flatten the list
             
-            index_test_mt = [ID_series[ID_series.str.startswith(ID_part)].index.tolist() for ID_part in test_ids]
+            index_test_mt = [[i for i, id_val in enumerate(ID_train) if str(id_val).startswith(str(ID_part))] 
+                            for ID_part in test_ids]
             index_test_mt = [item for sublist in index_test_mt for item in sublist]  # Flatten the list
 
             #print(f'index_test_mt is {index_test_mt}, index_train_mt is {index_train_mt}')
+            y_mt = y[:len(input_dataset_MT)]
             X_mt_train, y_mt_train = X_mt_scaled[index_train_mt], y_mt[index_train_mt]
             X_mt_test, y_mt_test = X_mt_scaled[index_test_mt], y_mt[index_test_mt]
             #print(f'X mt train shape is {X_mt_train.shape}, X mt test shape is {X_mt_test.shape}')
             
             index_train_v2020 = np.concatenate([v2020_folds[i] for i in range(10) if i != fold])
             index_test_v2020 = v2020_folds[fold]
+            y_v2020 = y[:len(input_dataset_V2020)]
             X_v2020_train, y_v2020_train = X_v2020_scaled[index_train_v2020], y_v2020[index_train_v2020]
             X_v2020_test, y_v2020_test = X_v2020_scaled[index_test_v2020], y_v2020[index_test_v2020]
             #print(f'X v2020 train shape is {X_v2020_train.shape}, X v2020 test shape is {X_v2020_test.shape}')
@@ -301,7 +310,6 @@ for params in param_combination:
     elif DATASET_SELECTION == 'WT+MT':
         X = np.concatenate([input_dataset_MT, input_dataset_WT], axis=0)
         y = np.concatenate([target_label_MT, target_label_WT], axis=0)
-        ID_series = pd.Series(ID_train)
         X_scaled = scaler.fit_transform(X)
         X_mt_scaled = X_scaled[:len(input_dataset_MT)]
         X_wt_scaled = X_scaled[len(input_dataset_MT):]
@@ -319,13 +327,17 @@ for params in param_combination:
             test_ids = mt_folds[fold]
             train_ids = np.concatenate([mt_folds[i] for i in range(10) if i != fold])
             
-            index_train_mt = [ID_series[ID_series.str.startswith(ID_part)].index.tolist() for ID_part in train_ids]
+            # Replace pandas Series.str.startswith() with list comprehension
+            index_train_mt = [[i for i, id_val in enumerate(ID_train) if str(id_val).startswith(str(ID_part))] 
+                              for ID_part in train_ids]
             index_train_mt = [item for sublist in index_train_mt for item in sublist]  # Flatten the list
             
-            index_test_mt = [ID_series[ID_series.str.startswith(ID_part)].index.tolist() for ID_part in test_ids]
+            index_test_mt = [[i for i, id_val in enumerate(ID_train) if str(id_val).startswith(str(ID_part))] 
+                            for ID_part in test_ids]
             index_test_mt = [item for sublist in index_test_mt for item in sublist]  # Flatten the list
 
             #print(f'index_test_mt is {index_test_mt}, index_train_mt is {index_train_mt}')
+            y_mt = y[:len(input_dataset_MT)]
             X_mt_train, y_mt_train = X_mt_scaled[index_train_mt], y_mt[index_train_mt]
             X_mt_test, y_mt_test = X_mt_scaled[index_test_mt], y_mt[index_test_mt]
             #print(f'X mt train shape is {X_mt_train.shape}, X mt test shape is {X_mt_test.shape}')

@@ -49,7 +49,7 @@ except ImportError:
         pkg_resources = DummyPkgResources()
 
 from pathlib import Path
-import pandas as pd
+import csv
 
 warnings.filterwarnings("ignore")
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
@@ -69,6 +69,8 @@ class Config:
             self._setup_packages()
             self._setup_arguments()
             self.generate_tables()  # Generate tables from P2P.csv
+            # Initialize mibpb feature flag (will be updated by check_external_tools)
+            self.ENABLE_MIBPB_FEATURES = True  # Default to True, will be set based on tool availability
             self.compile_cython_extensions()  # Compile Cython extensions if available
             Config._initialized = True
     
@@ -113,7 +115,6 @@ class Config:
             'fair-esm': '2.0.0',      # ESM protein language model
             'torch': '2.0.0',         # PyTorch for deep learning
             'numpy': '1.21.0',        # Numerical computing
-            'pandas': '1.3.0',        # Data manipulation
             'biopython': '1.79',      # Biological sequence handling
             'requests': '2.26.0',     # For downloading PDB files
             'tqdm': '4.62.0',         # Progress bars
@@ -209,14 +210,17 @@ class Config:
         """Generate tables for P2P.csv and update dataset configuration"""
 
         try:
-            # Read the main P2P.csv file
-            DATASET_P2P = pd.read_csv(self.FILE_P2P_CSV)
+            # Read the main P2P.csv file using Python's built-in csv module
+            DATASET_P2P = []
+            with open(self.FILE_P2P_CSV, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                DATASET_P2P = list(reader)
 
             # Generate dataset-specific tables
             # Note: suffix values in CSV are 'V2020', 'wt', 'mt' (lowercase for wt/mt)
-            V2020_TABLE = DATASET_P2P[DATASET_P2P['suffix'] == 'V2020']
-            WT_TABLE = DATASET_P2P[DATASET_P2P['suffix'] == 'wt']
-            MT_TABLE = DATASET_P2P[DATASET_P2P['suffix'] == 'mt']
+            V2020_TABLE = [row for row in DATASET_P2P if row.get('suffix') == 'V2020']
+            WT_TABLE = [row for row in DATASET_P2P if row.get('suffix') == 'wt']
+            MT_TABLE = [row for row in DATASET_P2P if row.get('suffix') == 'mt']
 
             # Debug: Print number of rows found for each dataset
             print(f"\n[INFO] Dataset filtering results:")
@@ -225,12 +229,12 @@ class Config:
             print(f"  MT: {len(MT_TABLE)} rows")
 
             # Store partner1 and partner2 columns as lists for each dataset
-            self.PDBBIND_V2020_PP_partner1 = V2020_TABLE['partnerA'].tolist()
-            self.PDBBIND_V2020_PP_partner2 = V2020_TABLE['partnerB'].tolist()
-            self.SKEMPI_V2_WT_partner1 = WT_TABLE['partnerA'].tolist()
-            self.SKEMPI_V2_WT_partner2 = WT_TABLE['partnerB'].tolist()
-            self.SKEMPI_V2_MT_partner1 = MT_TABLE['partnerA'].tolist()
-            self.SKEMPI_V2_MT_partner2 = MT_TABLE['partnerB'].tolist()
+            self.PDBBIND_V2020_PP_partner1 = [row.get('partnerA') for row in V2020_TABLE]
+            self.PDBBIND_V2020_PP_partner2 = [row.get('partnerB') for row in V2020_TABLE]
+            self.SKEMPI_V2_WT_partner1 = [row.get('partnerA') for row in WT_TABLE]
+            self.SKEMPI_V2_WT_partner2 = [row.get('partnerB') for row in WT_TABLE]
+            self.SKEMPI_V2_MT_partner1 = [row.get('partnerA') for row in MT_TABLE]
+            self.SKEMPI_V2_MT_partner2 = [row.get('partnerB') for row in MT_TABLE]
 
             # Update dataset configuration with tables and directories
             self.DATASET_CONFIG['V2020'].update({
@@ -413,9 +417,6 @@ class Config:
                 subprocess.check_call([pip_path, "install", "--upgrade", "pip"])
                 print("[SUCCESS] pip upgraded")
                 
-                # Install pandas (required for config to work)
-                subprocess.check_call([pip_path, "install", "pandas>=1.3.0"])
-                print("[SUCCESS] pandas installed")
                 
                 # Provide activation instructions
                 print(f"\n" + "="*60)
@@ -574,9 +575,25 @@ class Config:
         if os.path.exists(jackal_dir_file):
             try:
                 with open(jackal_dir_file, 'r') as f:
-                    jackal_lib_path = f.read().strip()
+                    content = f.read().strip()
                 
-                if os.path.exists(jackal_lib_path):
+                # Parse jackal.dir format: can be either a simple path or formatted as:
+                # pdb: .
+                # library: /path/to/library
+                # key: KEY
+                jackal_lib_path = None
+                if 'library:' in content:
+                    # Parse formatted version
+                    for line in content.split('\n'):
+                        line = line.strip()
+                        if line.startswith('library:'):
+                            jackal_lib_path = line.split('library:', 1)[1].strip()
+                            break
+                else:
+                    # Simple path format (backward compatibility)
+                    jackal_lib_path = content
+                
+                if jackal_lib_path and os.path.exists(jackal_lib_path):
                     # Check if the directory contains expected JACKAL library files
                     expected_files = ['libjackal.a', 'libjackal.so', 'jackal.lib']
                     found_files = []
@@ -597,17 +614,29 @@ class Config:
                     else:
                         print(f"[WARNING] jackal.dir points to existing path but no JACKAL library files found: {jackal_lib_path}")
                         print(f"  Expected files: {', '.join(expected_files)}")
-                        print("  Please update jackal.dir to point to the correct JACKAL library location")
+                        print("  Suggestion: Ensure the library path in jackal.dir points to a directory containing JACKAL library files")
                         print("  The directory should contain libjackal.a, libjackal.so, or jackal.lib")
+                        print(f"  Current jackal.dir location: {jackal_dir_file}")
                 else:
                     print(f"[WARNING] jackal.dir points to non-existent path: {jackal_lib_path}")
-                    print("Please update jackal.dir to point to the correct JACKAL library location")
+                    print("  Suggestion: Create or update jackal.dir file with the correct JACKAL library path")
+                    print(f"  File location: {jackal_dir_file}")
+                    print("  Format example:")
+                    print("    pdb: .")
+                    print("    library: /path/to/jackal/library")
+                    print("    key:XIANG2002")
             except Exception as e:
                 print(f"[ERROR] Could not read jackal.dir: {str(e)}")
         else:
             print("[WARNING] jackal.dir file not found")
             print(f"Expected location: {jackal_dir_file}")
-            print("Please create jackal.dir file with the path to your JACKAL library")
+            print("  Suggestion: Create jackal.dir file with your JACKAL library configuration")
+            print("  Format example:")
+            print("    pdb: .")
+            print("    library: /path/to/jackal/library")
+            print("    key:XIANG2002")
+            print("  Or use simple format (backward compatible):")
+            print("    /path/to/jackal/library")
         
         # Check pdb2pqr
         print("\n3. Checking pdb2pqr...")
@@ -676,6 +705,26 @@ class Config:
         print("EXTERNAL TOOLS CHECK COMPLETED")
         print("="*60)
         
+        # Check if mibpb and ms_intersection are available (checks 4 and 5)
+        mibpb_available = self._check_tool_in_path('mibpb')
+        ms_intersection_available = self._check_tool_in_path('ms_intersection')
+        
+        # Disable mibpb features if either tool is not available
+        if not mibpb_available or not ms_intersection_available:
+            self.ENABLE_MIBPB_FEATURES = False
+            print("\n" + "="*60)
+            print("MIBPB FEATURES DISABLED")
+            print("="*60)
+            if not mibpb_available:
+                print("[INFO] mibpb tool not found - electrostatics features will be skipped")
+            if not ms_intersection_available:
+                print("[INFO] ms_intersection tool not found - electrostatics features will be skipped")
+            print("Electrostatics features will be set to zero or skipped in feature generation.")
+            print("="*60)
+        else:
+            self.ENABLE_MIBPB_FEATURES = True
+            print("\n[INFO] MIBPB features enabled - electrostatics calculations will be performed")
+        
         # Return summary
         tools_status = {
             'profix': profix_available,  # Local or global availability
@@ -686,8 +735,9 @@ class Config:
             'scap_global': scap_runnable_global,
             'jackal_dir': os.path.exists(jackal_dir_file),
             'pdb2pqr': self._check_tool_in_path('pdb2pqr'),
-            'mibpb': self._check_tool_in_path('mibpb'),
-            'ms_intersection': self._check_tool_in_path('ms_intersection')
+            'mibpb': mibpb_available,
+            'ms_intersection': ms_intersection_available,
+            'mibpb_features_enabled': self.ENABLE_MIBPB_FEATURES
         }
         
         return tools_status
@@ -840,9 +890,13 @@ class Config:
         else:
             print(f"[OK] Main data file: {self.FILE_P2P_CSV}")
             try:
-                df = pd.read_csv(self.FILE_P2P_CSV)
-                print(f"   -> Contains {len(df)} protein pairs")
-                print(f"   -> Sources: {df['source'].unique().tolist()}")
+                # Read CSV using Python's built-in csv module
+                with open(self.FILE_P2P_CSV, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+                    sources = list(set(row.get('source', '') for row in rows))
+                print(f"   -> Contains {len(rows)} protein pairs")
+                print(f"   -> Sources: {sources}")
             except Exception as e:
                 print(f"   [WARNING] Error reading file: {str(e)}")
         
@@ -870,7 +924,7 @@ class Config:
         
         missing_packages = []
         outdated_packages = []
-        critical_packages = ['torch', 'fair-esm', 'numpy', 'pandas', 'biopython']
+        critical_packages = ['torch', 'fair-esm', 'numpy', 'biopython']
         
         for package, version in self.REQUIRED_PACKAGES.items():
             if package not in installed_packages:
@@ -928,15 +982,34 @@ class Config:
         if os.path.exists(jackal_dir_file):
             try:
                 with open(jackal_dir_file, 'r') as f:
-                    jackal_lib_path = f.read().strip()
-                if os.path.exists(jackal_lib_path):
+                    content = f.read().strip()
+                
+                # Parse jackal.dir format: can be either a simple path or formatted as:
+                # pdb: .
+                # library: /path/to/library
+                # key: KEY
+                jackal_lib_path = None
+                if 'library:' in content:
+                    # Parse formatted version
+                    for line in content.split('\n'):
+                        line = line.strip()
+                        if line.startswith('library:'):
+                            jackal_lib_path = line.split('library:', 1)[1].strip()
+                            break
+                else:
+                    # Simple path format (backward compatibility)
+                    jackal_lib_path = content
+                
+                if jackal_lib_path and os.path.exists(jackal_lib_path):
                     print(f"[OK] jackal.dir: {jackal_lib_path}")
                 else:
-                    print(f"[ERROR] jackal.dir points to non-existent path: {jackal_lib_path}")
-            except:
-                print(f"[ERROR] Could not read jackal.dir file")
+                    print(f"[WARNING] jackal.dir points to non-existent path: {jackal_lib_path}")
+                    print(f"  Suggestion: Update jackal.dir at {jackal_dir_file} with the correct library path")
+            except Exception as e:
+                print(f"[ERROR] Could not read jackal.dir file: {str(e)}")
         else:
-            print(f"[ERROR] jackal.dir file not found: {jackal_dir_file}")
+            print(f"[WARNING] jackal.dir file not found: {jackal_dir_file}")
+            print(f"  Suggestion: Create jackal.dir file with your JACKAL library configuration")
         
         # Check optional tools
         optional_tools = ['pdb2pqr', 'mibpb', 'ms_intersection']
@@ -998,8 +1071,12 @@ class Config:
         
         if not os.path.exists(jackal_dir_file):
             print(f"\n[CONFIG] JACKAL LIBRARY CONFIGURATION:")
-            print(f"   -> Create jackal.dir file: {jackal_dir_file}")
-            print(f"   -> Add path to JACKAL library directory")
+            print(f"   -> Create jackal.dir file at: {jackal_dir_file}")
+            print(f"   -> Format example:")
+            print(f"      pdb: .")
+            print(f"      library: /path/to/jackal/library")
+            print(f"      key:XIANG2002")
+            print(f"   -> Or simple format: /path/to/jackal/library")
         
         print(f"\n[SETUP] QUICK SETUP COMMANDS:")
         print(f"   # Create directories")
@@ -1045,6 +1122,7 @@ DIR_WT = config.DIR_WT
 DIR_MT = config.DIR_MT
 DIR_PROJECT = config.DIR_PROJECT
 DATASET_CONFIG = config.DATASET_CONFIG
+ENABLE_MIBPB_FEATURES = config.ENABLE_MIBPB_FEATURES
 
 # Export table-related attributes (if available)
 TABLE_P2P = getattr(config, 'TABLE_P2P', None)
@@ -1087,6 +1165,7 @@ __all__ = [
     'DIR_MT',
     'DIR_PROJECT',
     'DATASET_CONFIG',
+    'ENABLE_MIBPB_FEATURES',
     'TABLE_P2P',
     'TABLE_PDBBIND_V2020_PP',
     'TABLE_SKEMPI_V2_WT',
@@ -1130,8 +1209,12 @@ if __name__ == "__main__":
         # Environment was created but not activated, exit gracefully
         sys.exit(0)
 
-    # Check external tools
+    # Check external tools (this will update ENABLE_MIBPB_FEATURES flag)
     config.check_external_tools()
+    
+    # Update exported flag after checking tools
+    global ENABLE_MIBPB_FEATURES
+    ENABLE_MIBPB_FEATURES = config.ENABLE_MIBPB_FEATURES
     
     # Compile Cython extensions
     config.compile_cython_extensions()
